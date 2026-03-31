@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PriceProofSA.Api/PriceProofSA.Api.csproj" />
+    <Project Path="src/PriceProofSA.Application/PriceProofSA.Application.csproj" />
+    <Project Path="src/PriceProofSA.Domain/PriceProofSA.Domain.csproj" />
+    <Project Path="src/PriceProofSA.Infrastructure/PriceProofSA.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PriceProofSA.Api.Tests/PriceProofSA.Api.Tests.csproj" />
+    <Project Path="tests/PriceProofSA.Application.Tests/PriceProofSA.Application.Tests.csproj" />
+  </Folder>
+</Solution>

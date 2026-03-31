@@ -1,0 +1,36 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.user
+*.suo
+*.db
+
+# Dotnet
+bin/
+obj/
+TestResults/
+.vs/
+.appdata/
+.tools/
+src/backend/.dotnet/
+
+# Node
+node_modules/
+.next/
+coverage/
+src/frontend/.swc/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Storage
+storage/
+uploads/
+
+# Docker
+postgres-data/
+azurite-data/

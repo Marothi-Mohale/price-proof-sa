@@ -1,0 +1,6 @@
+@PriceProof.Api_HostAddress = http://localhost:5250
+
+GET {{PriceProof.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
