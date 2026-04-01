@@ -13,6 +13,8 @@ obj/
 TestResults/
 .vs/
 .appdata/
+.dotnet/
+.nuget/
 .tools/
 src/backend/.dotnet/
 

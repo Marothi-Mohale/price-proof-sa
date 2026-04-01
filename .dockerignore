@@ -1,0 +1,16 @@
+.git
+.github
+.appdata
+.dotnet
+.nuget
+**/bin
+**/obj
+**/.vs
+**/.idea
+**/.vscode
+src/frontend/node_modules
+src/frontend/.next
+src/backend
+tests/TestResults
+*.user
+*.suo

@@ -118,6 +118,17 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
         UpdatedUtc = now;
     }
 
+    public void MarkReceiptReceived(DateTimeOffset now)
+    {
+        if (!LatestQuotedAmount.HasValue || !LatestPaidAmount.HasValue)
+        {
+            return;
+        }
+
+        Status = CaseStatus.ReadyForReview;
+        UpdatedUtc = now;
+    }
+
     private void Recalculate(DateTimeOffset now)
     {
         if (!LatestQuotedAmount.HasValue)
@@ -138,7 +149,9 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
 
         var difference = decimal.Round(LatestPaidAmount.Value - LatestQuotedAmount.Value, 2, MidpointRounding.AwayFromZero);
         DifferenceAmount = difference;
-        Status = CaseStatus.ReadyForReview;
+        Status = _paymentRecords.Any(record => record.ReceiptRecord is not null)
+            ? CaseStatus.ReadyForReview
+            : CaseStatus.AwaitingReceipt;
 
         if (difference == 0)
         {
@@ -161,8 +174,6 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
                          latestPayment.PaymentMethod is PaymentMethod.CreditCard or PaymentMethod.DebitCard
             ? CaseClassification.PotentialCardSurcharge
             : CaseClassification.Overcharge;
-
-        UpdatedUtc = now;
     }
 
     private static string BuildCaseNumber()

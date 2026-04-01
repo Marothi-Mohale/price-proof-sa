@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Common.Exceptions;
@@ -70,6 +71,8 @@ public sealed class GlobalExceptionMiddleware
             Type = $"https://httpstatuses.com/{statusCode}",
             Instance = context.Request.Path
         };
+
+        details.Extensions["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier;
 
         if (errors is not null)
         {

@@ -20,6 +20,7 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
     {
         var paymentRecord = await _dbContext.PaymentRecords
             .Include(entity => entity.Case)
+            .Include(entity => entity.ReceiptRecord)
             .SingleOrDefaultAsync(entity => entity.Id == request.PaymentRecordId, cancellationToken);
 
         if (paymentRecord is null)
@@ -63,6 +64,7 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
 
         var now = DateTimeOffset.UtcNow;
         paymentRecord.AttachReceipt(receiptRecord, now);
+        paymentRecord.Case?.MarkReceiptReceived(now);
         _dbContext.ReceiptRecords.Add(receiptRecord);
         _dbContext.AuditLogs.Add(AuditLog.Create(
             nameof(ReceiptRecord),

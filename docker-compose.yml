@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: priceproof-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: priceproof
       POSTGRES_USER: priceproof
@@ -10,14 +11,22 @@ services:
       - "5432:5432"
     volumes:
       - priceproof-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U priceproof -d priceproof"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   api:
     build:
       context: .
       dockerfile: src/PriceProof.Api/Dockerfile
     container_name: priceproof-api
+    restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080

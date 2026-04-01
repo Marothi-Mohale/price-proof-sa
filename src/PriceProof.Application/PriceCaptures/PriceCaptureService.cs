@@ -20,6 +20,7 @@ internal sealed class PriceCaptureService : IPriceCaptureService
     {
         var discrepancyCase = await _dbContext.DiscrepancyCases
             .Include(entity => entity.PaymentRecords)
+                .ThenInclude(record => record.ReceiptRecord)
             .SingleOrDefaultAsync(entity => entity.Id == request.CaseId, cancellationToken);
 
         if (discrepancyCase is null)
