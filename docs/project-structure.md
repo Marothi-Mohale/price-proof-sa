@@ -5,23 +5,11 @@ priceProof/
 |- docs/
 |  |- implementation-plan.md
 |  `- project-structure.md
-|- infra/
-|  |- docker-compose.yml
-|  `- env/
-|     |- backend.env.example
-|     `- frontend.env.example
 |- src/
-|  |- backend/
-|  |  |- PriceProofSA.slnx
-|  |  |- .dockerignore
-|  |  |- src/
-|  |  |  |- PriceProofSA.Api/
-|  |  |  |- PriceProofSA.Application/
-|  |  |  |- PriceProofSA.Domain/
-|  |  |  `- PriceProofSA.Infrastructure/
-|  |  `- tests/
-|  |     |- PriceProofSA.Application.Tests/
-|  |     `- PriceProofSA.Api.Tests/
+|  |- PriceProof.Api/
+|  |- PriceProof.Application/
+|  |- PriceProof.Domain/
+|  |- PriceProof.Infrastructure/
 |  `- frontend/
 |     |- app/
 |     |- components/
@@ -29,12 +17,16 @@ priceProof/
 |     |- tests/
 |     |- Dockerfile
 |     `- package.json
+|- tests/
+|  |- PriceProof.UnitTests/
+|  `- PriceProof.IntegrationTests/
 |- README.md
 |- .gitignore
-`- .editorconfig
+`- PriceProof.sln
 ```
 
 ## Notes
-- Backend projects use a clean architecture split while staying pragmatic about EF Core reads.
-- Frontend lives in a separate app so it can later evolve independently or be replaced by a native client.
-- `infra` contains local orchestration and environment templates rather than deployment-specific cloud manifests.
+- The backend follows a clean architecture split while keeping API and persistence wiring pragmatic.
+- The frontend is isolated in its own Next.js application so the web experience can evolve independently.
+- Docker-based local orchestration lives at the repository root.
+- Local operational configuration stays outside the repository.

@@ -1,35 +1,79 @@
 import type {
+  AnalyzeCaseRequest,
   AuthSession,
+  BootstrapLookups,
+  CaseAnalysis,
+  CaseClassification,
   CaseDetail,
   CaseSummary,
+  CreateCaseRequest,
+  CreatePaymentRecordRequest,
+  CreatePriceCaptureRequest,
+  CreateReceiptRecordRequest,
   CurrentUser,
+  GeneratedComplaintPack,
+  GetCasesQuery,
   MerchantHistory,
-  QrQuoteLockStubResponse,
-  ReceiptUploadResponse
+  PagedResult,
+  PaymentRecordSummary,
+  PriceCaptureSummary,
+  ReceiptSummary,
+  RunReceiptOcrResult,
+  SignInRequest,
+  SignUpRequest,
+  UploadedFile
 } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
+const API_BASE_URL = "";
+const API_PREFIX = "/backend";
 
-async function apiRequest<T>(path: string, options: RequestInit = {}, sessionToken?: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+type QueryValue = string | number | boolean | undefined | null;
+
+export class ApiError extends Error {
+  status: number;
+  traceId?: string;
+  fieldErrors?: Record<string, string[]>;
+
+  constructor(message: string, status: number, traceId?: string, fieldErrors?: Record<string, string[]>) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.traceId = traceId;
+    this.fieldErrors = fieldErrors;
+  }
+}
+
+async function requestJson<T>(path: string, init: RequestInit = {}) {
+  const response = await fetch(`${API_PREFIX}${path}`, {
+    ...init,
     headers: {
-      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
-      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...options.headers
-    }
+      Accept: "application/json",
+      ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...init.headers
+    },
+    cache: "no-store"
   });
 
   if (!response.ok) {
-    const fallbackMessage = `Request failed with status ${response.status}.`;
-    let message = fallbackMessage;
+    let message = `Request failed with status ${response.status}.`;
+    let traceId: string | undefined;
+    let fieldErrors: Record<string, string[]> | undefined;
+
     try {
-      const body = (await response.json()) as { title?: string };
-      message = body.title ?? fallbackMessage;
+      const payload = (await response.json()) as {
+        title?: string;
+        detail?: string;
+        traceId?: string;
+        errors?: Record<string, string[]>;
+      };
+
+      message = payload.detail ?? payload.title ?? message;
+      traceId = payload.traceId;
+      fieldErrors = payload.errors;
     } catch {
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status, traceId, fieldErrors);
   }
 
   if (response.status === 204) {
@@ -39,129 +83,156 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, sessionTok
   return (await response.json()) as T;
 }
 
+function withQuery(path: string, query?: Record<string, QueryValue>) {
+  if (!query) {
+    return path;
+  }
+
+  const searchParams = new URLSearchParams();
+
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+
+    searchParams.set(key, String(value));
+  });
+
+  const suffix = searchParams.toString();
+  return suffix ? `${path}?${suffix}` : path;
+}
+
+export function getApiBaseUrl() {
+  return API_PREFIX;
+}
+
+export function buildAbsoluteUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_PREFIX}${normalizedPath}`;
+}
+
+export function buildUploadContentUrl(storagePath: string) {
+  return buildAbsoluteUrl(`/uploads/content?path=${encodeURIComponent(storagePath)}`);
+}
+
+async function downloadBinary(path: string, fallbackFileName: string) {
+  const response = await fetch(buildAbsoluteUrl(path), {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new ApiError("Unable to download the requested document.", response.status);
+  }
+
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  const contentDisposition = response.headers.get("Content-Disposition");
+  const suggestedFileName = contentDisposition?.match(/filename=\"?([^\"]+)\"?/)?.[1] ?? fallbackFileName;
+
+  link.href = downloadUrl;
+  link.download = suggestedFileName;
+  link.click();
+
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
 export const api = {
-  signUp: (input: { email: string; displayName: string }) =>
-    apiRequest<AuthSession>("/api/auth/sign-up", {
+  signIn(input: SignInRequest) {
+    return requestJson<AuthSession>("/auth/sign-in", {
       method: "POST",
       body: JSON.stringify(input)
-    }),
-  signIn: (input: { email: string }) =>
-    apiRequest<AuthSession>("/api/auth/sign-in", {
-      method: "POST",
-      body: JSON.stringify(input)
-    }),
-  getCurrentUser: (token: string) => apiRequest<CurrentUser>("/api/auth/me", {}, token),
-  listCases: (token: string) => apiRequest<CaseSummary[]>("/api/cases", {}, token),
-  createCase: (
-    token: string,
-    input: {
-      merchantName: string;
-      merchantCategory?: string;
-      branchName?: string;
-      branchAddress?: string;
-      branchCity?: string;
-      branchProvince?: string;
-      basketDescription: string;
-    }
-  ) =>
-    apiRequest<CaseDetail>("/api/cases", {
-      method: "POST",
-      body: JSON.stringify(input)
-    }, token),
-  getCase: (token: string, caseId: string) => apiRequest<CaseDetail>(`/api/cases/${caseId}`, {}, token),
-  addManualPriceCapture: (
-    token: string,
-    caseId: string,
-    input: { amount: number; quoteText?: string; notes?: string }
-  ) =>
-    apiRequest<CaseDetail>(`/api/cases/${caseId}/price-captures/manual`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    }, token),
-  addMediaPriceCapture: async (
-    token: string,
-    caseId: string,
-    input: { mode: string; amount?: number; quoteText?: string; notes?: string; file: File }
-  ) => {
-    const formData = new FormData();
-    formData.append("mode", input.mode);
-    if (typeof input.amount === "number") {
-      formData.append("amount", String(input.amount));
-    }
-    if (input.quoteText) {
-      formData.append("quoteText", input.quoteText);
-    }
-    if (input.notes) {
-      formData.append("notes", input.notes);
-    }
-    formData.append("file", input.file);
-
-    return apiRequest<CaseDetail>(`/api/cases/${caseId}/price-captures/media`, {
-      method: "POST",
-      body: formData
-    }, token);
-  },
-  addManualPayment: (
-    token: string,
-    caseId: string,
-    input: {
-      amount: number;
-      mode: string;
-      isCardPayment: boolean;
-      note?: string;
-      bankNotificationText?: string;
-    }
-  ) =>
-    apiRequest<CaseDetail>(`/api/cases/${caseId}/payments/manual`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    }, token),
-  addReceiptPayment: async (
-    token: string,
-    caseId: string,
-    input: { isCardPayment: boolean; note?: string; enteredAmount?: number; file: File }
-  ) => {
-    const formData = new FormData();
-    formData.append("isCardPayment", String(input.isCardPayment));
-    if (typeof input.enteredAmount === "number") {
-      formData.append("enteredAmount", String(input.enteredAmount));
-    }
-    if (input.note) {
-      formData.append("note", input.note);
-    }
-    formData.append("file", input.file);
-
-    return apiRequest<ReceiptUploadResponse>(`/api/cases/${caseId}/payments/receipt`, {
-      method: "POST",
-      body: formData
-    }, token);
-  },
-  generateComplaintPack: (token: string, caseId: string) =>
-    apiRequest<CaseDetail>(`/api/cases/${caseId}/complaint-pack`, {
-      method: "POST"
-    }, token),
-  getMerchantHistory: (token: string, merchantId: string) =>
-    apiRequest<MerchantHistory>(`/api/merchants/${merchantId}/history`, {}, token),
-  getMerchantQrStub: (token: string) => apiRequest<QrQuoteLockStubResponse>("/api/cases/merchant-qr-lock-stub", {}, token),
-  async downloadComplaintPack(token: string, caseId: string) {
-    const response = await fetch(`${API_BASE_URL}/api/cases/${caseId}/complaint-pack/download`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
     });
+  },
+  signUp(input: SignUpRequest) {
+    return requestJson<AuthSession>("/auth/sign-up", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  getCurrentUser(userId: string) {
+    return requestJson<CurrentUser>(`/auth/me/${userId}`);
+  },
+  getBootstrapLookups() {
+    return requestJson<BootstrapLookups>("/lookups/bootstrap");
+  },
+  listCases(query: GetCasesQuery) {
+    return requestJson<PagedResult<CaseSummary>>(withQuery("/cases", query));
+  },
+  getCase(caseId: string) {
+    return requestJson<CaseDetail>(`/cases/${caseId}`);
+  },
+  createCase(input: CreateCaseRequest) {
+    return requestJson<CaseDetail>("/cases", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  createPriceCapture(input: CreatePriceCaptureRequest) {
+    return requestJson<PriceCaptureSummary>("/price-captures", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  createPaymentRecord(input: CreatePaymentRecordRequest) {
+    return requestJson<PaymentRecordSummary>("/payment-records", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  createReceiptRecord(input: CreateReceiptRecordRequest) {
+    return requestJson<ReceiptSummary>("/receipt-records", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  runReceiptOcr(receiptRecordId: string) {
+    return requestJson<RunReceiptOcrResult>(`/receipt-records/${receiptRecordId}/run-ocr`, {
+      method: "POST"
+    });
+  },
+  analyzeCase(caseId: string, input: AnalyzeCaseRequest) {
+    return requestJson<CaseAnalysis>(`/cases/${caseId}/analyze`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  generateComplaintPack(caseId: string) {
+    return requestJson<GeneratedComplaintPack>(`/cases/${caseId}/generate-complaint-pack`, {
+      method: "POST"
+    });
+  },
+  getMerchantHistory(merchantId: string) {
+    return requestJson<MerchantHistory>(`/merchants/${merchantId}/history`);
+  },
+  uploadFile(file: File, category: string, caseId?: string) {
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("category", category);
 
-    if (!response.ok) {
-      throw new Error("Failed to download the complaint pack.");
+    if (caseId) {
+      formData.set("caseId", caseId);
     }
 
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const disposition = response.headers.get("Content-Disposition");
-    const fileName = disposition?.match(/filename="?([^"]+)"?/)?.[1] ?? "priceproof-evidence-pack.pdf";
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    return requestJson<UploadedFile>("/uploads", {
+      method: "POST",
+      body: formData
+    });
+  },
+  downloadComplaintPack(complaintPackId: string, fallbackFileName = "priceproof-complaint-pack.pdf") {
+    return downloadBinary(`/complaint-packs/${complaintPackId}/download`, fallbackFileName);
   }
 };
+
+export const caseClassificationOptions: CaseClassification[] = [
+  "PendingEvidence",
+  "Match",
+  "Undercharge",
+  "Overcharge",
+  "PotentialCardSurcharge",
+  "NeedsReview"
+];

@@ -1,5 +1,5 @@
-import { PriceProofDashboard } from "@/components/price-proof-dashboard";
+import { LandingScreen } from "@/components/landing/landing-screen";
 
 export default function HomePage() {
-  return <PriceProofDashboard />;
+  return <LandingScreen />;
 }

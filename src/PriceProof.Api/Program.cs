@@ -9,6 +9,7 @@ using Serilog;
 using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
 
 builder.Host.UseSerilog((context, services, configuration) =>
 {
@@ -32,6 +33,16 @@ builder.Services
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCaseRequestValidator>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("frontend", policy =>
+    {
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -40,6 +51,7 @@ var app = builder.Build();
 await app.Services.MigrateDatabaseAsync();
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseCors("frontend");
 app.UseSerilogRequestLogging();
 
 app.MapControllers();

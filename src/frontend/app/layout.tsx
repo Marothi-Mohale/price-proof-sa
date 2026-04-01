@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Space_Grotesk } from "next/font/google";
+import { SessionProvider } from "@/components/providers/session-provider";
 import "./globals.css";
 
 const bodyFont = IBM_Plex_Sans({
@@ -16,14 +17,14 @@ const displayFont = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "PriceProof SA",
-  description: "Document quoted prices, detect suspicious card surcharges, and generate consumer evidence packs."
+  description: "Capture pricing discrepancies, compare the charge, and generate a professional complaint pack."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body className={`${bodyFont.variable} ${displayFont.variable} bg-paper text-ink antialiased`}>
-        {children}
+        <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
   );

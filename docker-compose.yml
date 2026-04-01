@@ -1,12 +1,10 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
     container_name: priceproof-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: priceproof
-      POSTGRES_USER: priceproof
-      POSTGRES_PASSWORD: priceproof
     ports:
       - "5432:5432"
     volumes:
@@ -27,10 +25,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=priceproof;Username=priceproof;Password=priceproof
+    command:
+      - --ConnectionStrings:DefaultConnection=Host=postgres;Port=5432;Database=priceproof;Username=priceproof;Password=priceproof
     ports:
       - "8080:8080"
 

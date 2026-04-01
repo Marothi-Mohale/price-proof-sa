@@ -88,4 +88,4 @@ PriceProof SA is a mobile-first consumer protection app for South African shoppe
 - The system computes a difference and classifies the mismatch.
 - A PDF complaint pack is downloadable for completed cases.
 - Merchant history and repeated reports influence a visible merchant risk score.
-- The system runs locally with Docker and documented environment variables.
+- The system runs locally with Docker and keeps machine-specific operational configuration outside source control.

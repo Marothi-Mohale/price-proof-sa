@@ -15,8 +15,6 @@ RUN dotnet publish src/PriceProofSA.Api/PriceProofSA.Api.csproj -c Release -o /a
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-
-ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "PriceProofSA.Api.dll"]
+ENTRYPOINT ["dotnet", "PriceProofSA.Api.dll", "--urls", "http://0.0.0.0:8080"]
