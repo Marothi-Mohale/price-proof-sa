@@ -41,6 +41,18 @@ public sealed class ReceiptRecord : AuditableEntity
 
     public string? RawText { get; private set; }
 
+    public DateTimeOffset? TransactionAtUtc { get; private set; }
+
+    public string? OcrProviderName { get; private set; }
+
+    public decimal? OcrConfidence { get; private set; }
+
+    public string? OcrPayloadMetadataJson { get; private set; }
+
+    public string? OcrLineItemsJson { get; private set; }
+
+    public DateTimeOffset? OcrProcessedUtc { get; private set; }
+
     public DateTimeOffset UploadedAtUtc { get; private set; }
 
     public static ReceiptRecord Create(
@@ -80,8 +92,62 @@ public sealed class ReceiptRecord : AuditableEntity
         };
     }
 
-    private static string? Normalize(string? value)
+    public void ApplyOcrResult(
+        string providerName,
+        decimal confidence,
+        string rawPayloadMetadataJson,
+        DateTimeOffset processedAtUtc,
+        string? rawText = null,
+        string? merchantName = null,
+        decimal? parsedTotalAmount = null,
+        DateTimeOffset? transactionAtUtc = null,
+        string? receiptNumber = null,
+        string? lineItemsJson = null)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        OcrProviderName = Normalize(providerName, 80);
+        OcrConfidence = decimal.Round(Math.Clamp(confidence, 0m, 1m), 4, MidpointRounding.AwayFromZero);
+        OcrPayloadMetadataJson = Normalize(rawPayloadMetadataJson, 32000);
+        OcrLineItemsJson = Normalize(lineItemsJson, 16000);
+        OcrProcessedUtc = processedAtUtc;
+
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            RawText = Normalize(rawText, 16000);
+        }
+
+        if (!string.IsNullOrWhiteSpace(merchantName))
+        {
+            MerchantName = Normalize(merchantName, 200);
+        }
+
+        if (parsedTotalAmount.HasValue)
+        {
+            ParsedTotalAmount = decimal.Round(parsedTotalAmount.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        if (transactionAtUtc.HasValue)
+        {
+            TransactionAtUtc = transactionAtUtc.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(receiptNumber))
+        {
+            ReceiptNumber = Normalize(receiptNumber, 64);
+        }
+
+        UpdatedUtc = processedAtUtc;
+    }
+
+    private static string? Normalize(string? value, int? maxLength = null)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        return maxLength.HasValue && normalized.Length > maxLength.Value
+            ? normalized[..maxLength.Value]
+            : normalized;
     }
 }

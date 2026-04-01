@@ -46,6 +46,11 @@ public sealed class GlobalExceptionMiddleware
             _logger.LogWarning(exception, "Conflict for {Method} {Path}", context.Request.Method, context.Request.Path);
             await WriteProblemAsync(context, StatusCodes.Status409Conflict, exception.Message, null, _environment, exception);
         }
+        catch (ServiceUnavailableException exception)
+        {
+            _logger.LogWarning(exception, "Service unavailable for {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status503ServiceUnavailable, exception.Message, null, _environment, exception);
+        }
         catch (Exception exception)
         {
             _logger.LogError(exception, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);

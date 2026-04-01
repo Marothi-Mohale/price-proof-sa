@@ -4,9 +4,12 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
 using PriceProof.Infrastructure.Persistence.Interceptors;
+using PriceProof.IntegrationTests.Fakes;
 
 namespace PriceProof.IntegrationTests;
 
@@ -24,6 +27,8 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
             services.RemoveAll<AppDbContext>();
             services.RemoveAll<IApplicationDbContext>();
             services.RemoveAll<AuditingInterceptor>();
+            services.RemoveAll<IOcrProvider>();
+            services.RemoveAll<IReceiptDocumentContentResolver>();
 
             _connection = new SqliteConnection("Data Source=:memory:");
             _connection.Open();
@@ -36,6 +41,16 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.AddInterceptors(serviceProvider.GetRequiredService<AuditingInterceptor>());
             });
             services.AddScoped<IApplicationDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
+            services.AddScoped<IOcrProvider, FakeOcrProvider>();
+            services.AddScoped<IReceiptDocumentContentResolver, FakeReceiptDocumentContentResolver>();
+            services.PostConfigure<OcrOptions>(options =>
+            {
+                options.Enabled = true;
+                options.PrimaryProvider = "AzureDocumentIntelligence";
+                options.SecondaryProvider = "GoogleVision";
+                options.RequestTimeoutSeconds = 5;
+                options.RetryCount = 0;
+            });
         });
     }
 

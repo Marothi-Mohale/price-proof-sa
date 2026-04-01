@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PriceProof.Application\PriceProof.Application.csproj" />
     <ProjectReference Include="..\..\src\PriceProof.Domain\PriceProof.Domain.csproj" />
+    <ProjectReference Include="..\..\src\PriceProof.Infrastructure\PriceProof.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

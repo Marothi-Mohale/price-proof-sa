@@ -18,4 +18,15 @@ public sealed class ReceiptRecordsController : ControllerBase
         var result = await receiptRecordService.CreateAsync(request, cancellationToken);
         return Created($"/receipt-records/{result.Id}", result);
     }
+
+    [HttpPost("{id:guid}/run-ocr")]
+    [ProducesResponseType(typeof(RunReceiptOcrResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<RunReceiptOcrResultDto>> RunOcrAsync(
+        Guid id,
+        [FromServices] IReceiptRecordService receiptRecordService,
+        CancellationToken cancellationToken)
+    {
+        var result = await receiptRecordService.RunOcrAsync(id, cancellationToken);
+        return Ok(result);
+    }
 }

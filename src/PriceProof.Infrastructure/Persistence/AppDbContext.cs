@@ -335,6 +335,12 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.ReceiptNumber).HasMaxLength(64);
             builder.Property(entity => entity.MerchantName).HasMaxLength(200);
             builder.Property(entity => entity.RawText).HasMaxLength(16000);
+            builder.Property(entity => entity.TransactionAtUtc);
+            builder.Property(entity => entity.OcrProviderName).HasMaxLength(80);
+            builder.Property(entity => entity.OcrConfidence).HasPrecision(5, 4);
+            builder.Property(entity => entity.OcrPayloadMetadataJson).HasMaxLength(32000);
+            builder.Property(entity => entity.OcrLineItemsJson).HasMaxLength(16000);
+            builder.Property(entity => entity.OcrProcessedUtc);
             builder.Property(entity => entity.CreatedUtc).IsRequired();
             builder.Property(entity => entity.UpdatedUtc).IsRequired();
             builder.HasQueryFilter(entity => !entity.Case!.IsDeleted && !entity.UploadedByUser!.IsDeleted);

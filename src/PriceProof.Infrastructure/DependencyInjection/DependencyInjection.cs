@@ -3,7 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Infrastructure.Ocr;
+using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
 using PriceProof.Infrastructure.Persistence.Interceptors;
 
@@ -14,6 +17,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<AuditingInterceptor>();
+        services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
 
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
         {
@@ -25,6 +29,21 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IApplicationDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
+        services.AddSingleton<ReceiptOcrTextParser>();
+        services.AddScoped<IReceiptDocumentContentResolver, FileSystemReceiptDocumentContentResolver>();
+        services.AddScoped<IOcrOrchestrator, OcrOrchestrator>();
+
+        services.AddHttpClient<AzureDocumentIntelligenceOcrProvider>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
+        services.AddHttpClient<GoogleVisionOcrProvider>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
+
+        services.AddScoped<IOcrProvider>(serviceProvider => serviceProvider.GetRequiredService<AzureDocumentIntelligenceOcrProvider>());
+        services.AddScoped<IOcrProvider>(serviceProvider => serviceProvider.GetRequiredService<GoogleVisionOcrProvider>());
 
         services.AddHealthChecks()
             .AddDbContextCheck<AppDbContext>("postgresql");

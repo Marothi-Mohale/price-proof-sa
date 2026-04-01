@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PriceProof.Application.Abstractions.Ocr;
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
@@ -9,11 +10,20 @@ namespace PriceProof.Application.ReceiptRecords;
 
 internal sealed class ReceiptRecordService : IReceiptRecordService
 {
-    private readonly IApplicationDbContext _dbContext;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public ReceiptRecordService(IApplicationDbContext dbContext)
+    private readonly IApplicationDbContext _dbContext;
+    private readonly IReceiptDocumentContentResolver _documentContentResolver;
+    private readonly IOcrOrchestrator _ocrOrchestrator;
+
+    public ReceiptRecordService(
+        IApplicationDbContext dbContext,
+        IReceiptDocumentContentResolver documentContentResolver,
+        IOcrOrchestrator ocrOrchestrator)
     {
         _dbContext = dbContext;
+        _documentContentResolver = documentContentResolver;
+        _ocrOrchestrator = ocrOrchestrator;
     }
 
     public async Task<ReceiptRecordDto> CreateAsync(CreateReceiptRecordRequest request, CancellationToken cancellationToken)
@@ -77,6 +87,79 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        return ToDto(receiptRecord);
+    }
+
+    public async Task<RunReceiptOcrResultDto> RunOcrAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var receiptRecord = await _dbContext.ReceiptRecords
+            .SingleOrDefaultAsync(entity => entity.Id == id, cancellationToken);
+
+        if (receiptRecord is null)
+        {
+            throw new NotFoundException($"Receipt record '{id}' was not found.");
+        }
+
+        var document = await _documentContentResolver.ResolveAsync(
+            receiptRecord.FileName,
+            receiptRecord.ContentType,
+            receiptRecord.StoragePath,
+            cancellationToken);
+
+        var ocrResult = await _ocrOrchestrator.RecognizeReceiptAsync(document, cancellationToken);
+        var lineItemsJson = JsonSerializer.Serialize(ocrResult.LineItems, JsonOptions);
+        var processedAtUtc = DateTimeOffset.UtcNow;
+
+        receiptRecord.ApplyOcrResult(
+            ocrResult.ProviderName,
+            ocrResult.Confidence,
+            ocrResult.RawPayloadMetadataJson,
+            processedAtUtc,
+            ocrResult.RawText,
+            ocrResult.MerchantName,
+            ocrResult.TransactionTotal,
+            ocrResult.TransactionAtUtc,
+            ocrResult.ReceiptNumber,
+            lineItemsJson);
+
+        _dbContext.AuditLogs.Add(AuditLog.Create(
+            nameof(ReceiptRecord),
+            "ReceiptOcrCompleted",
+            JsonSerializer.Serialize(new
+            {
+                ReceiptRecordId = receiptRecord.Id,
+                receiptRecord.CaseId,
+                Provider = ocrResult.ProviderName,
+                ocrResult.Confidence,
+                ocrResult.MerchantName,
+                ocrResult.TransactionTotal,
+                ocrResult.TransactionAtUtc,
+                LineItemCount = ocrResult.LineItems.Count
+            }, JsonOptions),
+            Guid.NewGuid().ToString("N"),
+            processedAtUtc,
+            receiptRecord.UploadedByUserId,
+            receiptRecord.CaseId));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new RunReceiptOcrResultDto(
+            receiptRecord.Id,
+            ocrResult.ProviderName,
+            ocrResult.Confidence,
+            ocrResult.RawPayloadMetadataJson,
+            receiptRecord.MerchantName,
+            receiptRecord.ParsedTotalAmount,
+            receiptRecord.TransactionAtUtc,
+            ocrResult.LineItems
+                .Select(item => new ReceiptOcrLineItemDto(item.Description, item.TotalAmount, item.Quantity, item.UnitPrice))
+                .ToArray(),
+            receiptRecord.RawText,
+            processedAtUtc);
+    }
+
+    private static ReceiptRecordDto ToDto(ReceiptRecord receiptRecord)
+    {
         return new ReceiptRecordDto(
             receiptRecord.Id,
             receiptRecord.CaseId,

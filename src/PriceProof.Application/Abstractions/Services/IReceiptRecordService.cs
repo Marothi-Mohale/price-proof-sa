@@ -5,4 +5,6 @@ namespace PriceProof.Application.Abstractions.Services;
 public interface IReceiptRecordService
 {
     Task<ReceiptRecordDto> CreateAsync(CreateReceiptRecordRequest request, CancellationToken cancellationToken);
+
+    Task<RunReceiptOcrResultDto> RunOcrAsync(Guid id, CancellationToken cancellationToken);
 }
