@@ -259,6 +259,20 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<int?>("AnalysisClassification")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("AnalysisConfidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)");
+
+                    b.Property<string>("AnalysisExplanation")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("AnalysisUpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("BranchId")
                         .HasColumnType("uuid");
 

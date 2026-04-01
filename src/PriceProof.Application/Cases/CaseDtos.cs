@@ -72,6 +72,15 @@ public sealed record AuditLogDto(
     DateTimeOffset OccurredAtUtc,
     DateTimeOffset CreatedUtc);
 
+public sealed record CaseAnalysisDto(
+    decimal QuotedAmount,
+    decimal ChargedAmount,
+    decimal Difference,
+    decimal? PercentageDifference,
+    string Classification,
+    decimal Confidence,
+    string Explanation);
+
 public sealed record CaseSummaryDto(
     Guid Id,
     string CaseNumber,

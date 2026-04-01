@@ -40,4 +40,16 @@ public sealed class CasesController : ControllerBase
         var result = await caseService.ListAsync(query, cancellationToken);
         return Ok(result);
     }
+
+    [HttpPost("{id:guid}/analyze")]
+    [ProducesResponseType(typeof(CaseAnalysisDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<CaseAnalysisDto>> AnalyzeAsync(
+        Guid id,
+        [FromBody] AnalyzeCaseRequest request,
+        [FromServices] ICaseService caseService,
+        CancellationToken cancellationToken)
+    {
+        var result = await caseService.AnalyzeAsync(id, request, cancellationToken);
+        return Ok(result);
+    }
 }

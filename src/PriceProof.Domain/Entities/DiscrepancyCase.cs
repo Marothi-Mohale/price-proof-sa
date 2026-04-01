@@ -1,5 +1,6 @@
 using PriceProof.Domain.Common;
 using PriceProof.Domain.Enums;
+using PriceProof.Domain.Services;
 
 namespace PriceProof.Domain.Entities;
 
@@ -41,6 +42,14 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
     public decimal? DifferenceAmount { get; private set; }
 
     public CaseClassification Classification { get; private set; }
+
+    public DiscrepancyAnalysisClassification? AnalysisClassification { get; private set; }
+
+    public decimal? AnalysisConfidence { get; private set; }
+
+    public string? AnalysisExplanation { get; private set; }
+
+    public DateTimeOffset? AnalysisUpdatedUtc { get; private set; }
 
     public CaseStatus Status { get; private set; }
 
@@ -129,8 +138,20 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
         UpdatedUtc = now;
     }
 
+    public void ApplyAnalysis(DiscrepancyAnalysisResult result, DateTimeOffset now)
+    {
+        AnalysisClassification = result.Classification;
+        AnalysisConfidence = result.Confidence;
+        AnalysisExplanation = result.Explanation;
+        AnalysisUpdatedUtc = now;
+        Classification = MapAnalysisClassification(result.Classification);
+        UpdatedUtc = now;
+    }
+
     private void Recalculate(DateTimeOffset now)
     {
+        ClearAnalysis();
+
         if (!LatestQuotedAmount.HasValue)
         {
             DifferenceAmount = null;
@@ -179,6 +200,28 @@ public sealed class DiscrepancyCase : SoftDeletableEntity
     private static string BuildCaseNumber()
     {
         return $"PP-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..20];
+    }
+
+    private void ClearAnalysis()
+    {
+        AnalysisClassification = null;
+        AnalysisConfidence = null;
+        AnalysisExplanation = null;
+        AnalysisUpdatedUtc = null;
+    }
+
+    private static CaseClassification MapAnalysisClassification(DiscrepancyAnalysisClassification classification)
+    {
+        return classification switch
+        {
+            DiscrepancyAnalysisClassification.Match => CaseClassification.Match,
+            DiscrepancyAnalysisClassification.LikelyCardSurcharge => CaseClassification.PotentialCardSurcharge,
+            DiscrepancyAnalysisClassification.LowerThanQuoted => CaseClassification.Undercharge,
+            DiscrepancyAnalysisClassification.PossibleCashback => CaseClassification.NeedsReview,
+            DiscrepancyAnalysisClassification.PossibleSeparateFee => CaseClassification.NeedsReview,
+            DiscrepancyAnalysisClassification.UnclearPositiveMismatch => CaseClassification.NeedsReview,
+            _ => CaseClassification.NeedsReview
+        };
     }
 
     private static string? Normalize(string? value)

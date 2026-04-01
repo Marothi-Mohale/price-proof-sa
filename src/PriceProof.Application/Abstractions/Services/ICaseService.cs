@@ -10,4 +10,6 @@ public interface ICaseService
     Task<CaseDetailDto> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
     Task<PagedResult<CaseSummaryDto>> ListAsync(GetCasesQuery query, CancellationToken cancellationToken);
+
+    Task<CaseAnalysisDto> AnalyzeAsync(Guid id, AnalyzeCaseRequest request, CancellationToken cancellationToken);
 }

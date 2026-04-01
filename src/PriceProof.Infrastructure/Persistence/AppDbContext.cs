@@ -246,6 +246,8 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.LatestQuotedAmount).HasPrecision(18, 2);
             builder.Property(entity => entity.LatestPaidAmount).HasPrecision(18, 2);
             builder.Property(entity => entity.DifferenceAmount).HasPrecision(18, 2);
+            builder.Property(entity => entity.AnalysisConfidence).HasPrecision(5, 4);
+            builder.Property(entity => entity.AnalysisExplanation).HasMaxLength(2000);
             builder.Property(entity => entity.CreatedUtc).IsRequired();
             builder.Property(entity => entity.UpdatedUtc).IsRequired();
             builder.HasQueryFilter(entity => !entity.IsDeleted);

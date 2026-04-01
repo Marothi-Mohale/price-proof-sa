@@ -5,6 +5,7 @@ using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Application.Common.Models;
 using PriceProof.Domain.Entities;
+using PriceProof.Domain.Services;
 
 namespace PriceProof.Application.Cases;
 
@@ -13,10 +14,12 @@ internal sealed class CaseService : ICaseService
     private static readonly JsonSerializerOptions AuditJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IApplicationDbContext _dbContext;
+    private readonly IDiscrepancyDetectionEngine _discrepancyDetectionEngine;
 
-    public CaseService(IApplicationDbContext dbContext)
+    public CaseService(IApplicationDbContext dbContext, IDiscrepancyDetectionEngine discrepancyDetectionEngine)
     {
         _dbContext = dbContext;
+        _discrepancyDetectionEngine = discrepancyDetectionEngine;
     }
 
     public async Task<CaseDetailDto> CreateAsync(CreateCaseRequest request, CancellationToken cancellationToken)
@@ -127,6 +130,71 @@ internal sealed class CaseService : ICaseService
         return new PagedResult<CaseSummaryDto>(items, totalCount, skip, take);
     }
 
+    public async Task<CaseAnalysisDto> AnalyzeAsync(Guid id, AnalyzeCaseRequest request, CancellationToken cancellationToken)
+    {
+        var discrepancyCase = await _dbContext.DiscrepancyCases
+            .Include(entity => entity.PriceCaptures)
+            .Include(entity => entity.PaymentRecords)
+                .ThenInclude(record => record.ReceiptRecord)
+            .SingleOrDefaultAsync(entity => entity.Id == id, cancellationToken);
+
+        if (discrepancyCase is null)
+        {
+            throw new NotFoundException($"Case '{id}' was not found.");
+        }
+
+        if (!discrepancyCase.LatestQuotedAmount.HasValue || !discrepancyCase.LatestPaidAmount.HasValue)
+        {
+            throw new ConflictException("A case needs both a quoted amount and a charged amount before analysis can run.");
+        }
+
+        var analysis = _discrepancyDetectionEngine.Analyze(new DiscrepancyAnalysisInput(
+            discrepancyCase.LatestQuotedAmount.Value,
+            discrepancyCase.LatestPaidAmount.Value,
+            discrepancyCase.CurrencyCode,
+            request.MerchantSaidCardFee,
+            request.CashbackPresent,
+            request.DeliveryOrServiceFeePresent,
+            BuildEvidenceText(discrepancyCase, request.EvidenceText)));
+
+        var now = DateTimeOffset.UtcNow;
+        discrepancyCase.ApplyAnalysis(analysis, now);
+
+        _dbContext.AuditLogs.Add(AuditLog.Create(
+            nameof(DiscrepancyCase),
+            "CaseAnalyzed",
+            JsonSerializer.Serialize(new
+            {
+                CaseId = discrepancyCase.Id,
+                Request = request,
+                Result = new
+                {
+                    analysis.QuotedAmount,
+                    analysis.ChargedAmount,
+                    analysis.Difference,
+                    analysis.PercentageDifference,
+                    Classification = analysis.Classification.ToString(),
+                    analysis.Confidence,
+                    analysis.Explanation
+                }
+            }, AuditJsonOptions),
+            Guid.NewGuid().ToString("N"),
+            now,
+            discrepancyCase.ReportedByUserId,
+            discrepancyCase.Id));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new CaseAnalysisDto(
+            analysis.QuotedAmount,
+            analysis.ChargedAmount,
+            analysis.Difference,
+            analysis.PercentageDifference,
+            analysis.Classification.ToString(),
+            analysis.Confidence,
+            analysis.Explanation);
+    }
+
     private async Task<DiscrepancyCase> LoadCaseAsync(Guid caseId, CancellationToken cancellationToken)
     {
         return await LoadCaseOrDefaultAsync(caseId, cancellationToken)
@@ -146,5 +214,33 @@ internal sealed class CaseService : ICaseService
             .Include(entity => entity.ComplaintPacks)
             .Include(entity => entity.AuditLogs)
             .SingleOrDefaultAsync(entity => entity.Id == caseId, cancellationToken);
+    }
+
+    private static string BuildEvidenceText(DiscrepancyCase discrepancyCase, string? additionalEvidenceText)
+    {
+        var latestPriceCapture = discrepancyCase.PriceCaptures
+            .OrderByDescending(capture => capture.CapturedAtUtc)
+            .ThenByDescending(capture => capture.CreatedUtc)
+            .FirstOrDefault();
+
+        var latestPayment = discrepancyCase.PaymentRecords
+            .OrderByDescending(record => record.PaidAtUtc)
+            .ThenByDescending(record => record.CreatedUtc)
+            .FirstOrDefault();
+
+        var parts = new[]
+        {
+            additionalEvidenceText,
+            discrepancyCase.Notes,
+            latestPriceCapture?.MerchantStatement,
+            latestPriceCapture?.Notes,
+            latestPayment?.Notes,
+            latestPayment?.ReceiptRecord?.MerchantName,
+            latestPayment?.ReceiptRecord?.RawText
+        };
+
+        return string.Join(
+            Environment.NewLine,
+            parts.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()));
     }
 }
