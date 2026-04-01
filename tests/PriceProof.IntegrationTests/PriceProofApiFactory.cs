@@ -16,10 +16,17 @@ namespace PriceProof.IntegrationTests;
 public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private SqliteConnection? _connection;
+    private string? _storageRootPath;
+
+    public string StorageRootPath => _storageRootPath
+        ?? throw new InvalidOperationException("The test storage path has not been initialized.");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        _storageRootPath = Path.Combine(Path.GetTempPath(), "priceproof-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_storageRootPath);
 
         builder.ConfigureServices(services =>
         {
@@ -50,6 +57,14 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.SecondaryProvider = "GoogleVision";
                 options.RequestTimeoutSeconds = 5;
                 options.RetryCount = 0;
+                options.StorageRootPath = _storageRootPath!;
+            });
+            services.PostConfigure<ComplaintPackOptions>(options =>
+            {
+                options.Enabled = true;
+                options.StorageRootPath = _storageRootPath!;
+                options.IncludeEvidencePreviews = true;
+                options.IncludeEvidenceReferences = true;
             });
         });
     }
@@ -61,6 +76,11 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
         if (_connection is not null)
         {
             await _connection.DisposeAsync();
+        }
+
+        if (!string.IsNullOrWhiteSpace(_storageRootPath) && Directory.Exists(_storageRootPath))
+        {
+            Directory.Delete(_storageRootPath, recursive: true);
         }
     }
 }

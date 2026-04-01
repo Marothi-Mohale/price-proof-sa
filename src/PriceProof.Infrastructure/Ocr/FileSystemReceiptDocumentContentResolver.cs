@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Infrastructure.Options;
+using PriceProof.Infrastructure.Storage;
 
 namespace PriceProof.Infrastructure.Ocr;
 
@@ -49,30 +50,13 @@ public sealed class FileSystemReceiptDocumentContentResolver : IReceiptDocumentC
             throw new ConflictException("The stored receipt file could not be accessed for OCR.");
         }
 
-        if (Uri.TryCreate(storagePath, UriKind.Absolute, out var absoluteUri))
+        try
         {
-            if (!absoluteUri.IsFile)
-            {
-                throw new ConflictException("The stored receipt file could not be accessed for OCR.");
-            }
-
-            return absoluteUri.LocalPath;
+            return FileStoragePathResolver.Resolve(storagePath, _options.StorageRootPath);
         }
-
-        if (Path.IsPathFullyQualified(storagePath))
+        catch (InvalidOperationException)
         {
-            return storagePath;
+            throw new ConflictException("The stored receipt file could not be accessed for OCR.");
         }
-
-        var relativePath = storagePath
-            .TrimStart('/', '\\')
-            .Replace('/', Path.DirectorySeparatorChar)
-            .Replace('\\', Path.DirectorySeparatorChar);
-
-        var root = Path.IsPathRooted(_options.StorageRootPath)
-            ? _options.StorageRootPath
-            : Path.Combine(Directory.GetCurrentDirectory(), _options.StorageRootPath);
-
-        return Path.GetFullPath(Path.Combine(root, relativePath));
     }
 }

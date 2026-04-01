@@ -62,6 +62,7 @@ public sealed record ComplaintPackDto(
     string StoragePath,
     string ContentHash,
     string Summary,
+    string DownloadUrl,
     DateTimeOffset GeneratedAtUtc);
 
 public sealed record AuditLogDto(

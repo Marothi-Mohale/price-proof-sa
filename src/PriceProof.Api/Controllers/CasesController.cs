@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Cases;
+using PriceProof.Application.ComplaintPacks;
 
 namespace PriceProof.Api.Controllers;
 
@@ -51,5 +52,16 @@ public sealed class CasesController : ControllerBase
     {
         var result = await caseService.AnalyzeAsync(id, request, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/generate-complaint-pack")]
+    [ProducesResponseType(typeof(GeneratedComplaintPackDto), StatusCodes.Status201Created)]
+    public async Task<ActionResult<GeneratedComplaintPackDto>> GenerateComplaintPackAsync(
+        Guid id,
+        [FromServices] IComplaintPackService complaintPackService,
+        CancellationToken cancellationToken)
+    {
+        var result = await complaintPackService.GenerateAsync(id, cancellationToken);
+        return Created($"/complaint-packs/{result.Id}", result);
     }
 }

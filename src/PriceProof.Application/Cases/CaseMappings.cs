@@ -125,6 +125,7 @@ internal static class CaseMappings
         entity.StoragePath,
         entity.ContentHash,
         entity.Summary,
+        $"/complaint-packs/{entity.Id}/download",
         entity.GeneratedAtUtc);
 
     public static AuditLogDto ToDto(this AuditLog entity) => new(

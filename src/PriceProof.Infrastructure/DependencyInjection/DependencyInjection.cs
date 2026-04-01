@@ -3,8 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PriceProof.Application.Abstractions.ComplaintPacks;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Infrastructure.ComplaintPacks;
 using PriceProof.Infrastructure.Ocr;
 using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
@@ -17,6 +19,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<AuditingInterceptor>();
+        services.Configure<ComplaintPackOptions>(configuration.GetSection(ComplaintPackOptions.SectionName));
         services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
 
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
@@ -30,6 +33,8 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
         services.AddSingleton<ReceiptOcrTextParser>();
+        services.AddScoped<IComplaintPackGenerator, QuestPdfComplaintPackGenerator>();
+        services.AddScoped<IComplaintPackDocumentStore, FileSystemComplaintPackDocumentStore>();
         services.AddScoped<IReceiptDocumentContentResolver, FileSystemReceiptDocumentContentResolver>();
         services.AddScoped<IOcrOrchestrator, OcrOrchestrator>();
 
