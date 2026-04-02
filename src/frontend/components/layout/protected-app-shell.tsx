@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { useSession } from "@/components/providers/session-provider";
 import { cn } from "@/lib/utils";
 
-const navigationItems = [
+const baseNavigationItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/cases/new", label: "New Case" },
   { href: "/settings", label: "Settings" }
@@ -19,6 +19,10 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, initializing, session, signOut } = useSession();
+  const isAdmin = currentUser?.isAdmin ?? session?.isAdmin ?? false;
+  const navigationItems = isAdmin
+    ? [...baseNavigationItems, { href: "/admin/risk", label: "Risk Desk" }]
+    : baseNavigationItems;
 
   useEffect(() => {
     if (!initializing && !session) {
@@ -81,6 +85,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Signed in as</p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">{currentUser?.displayName ?? session.displayName}</p>
                 <p className="text-sm text-slate-600">{currentUser?.email ?? session.email}</p>
+                {isAdmin ? <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">Admin access</p> : null}
               </div>
               <Button
                 variant="secondary"

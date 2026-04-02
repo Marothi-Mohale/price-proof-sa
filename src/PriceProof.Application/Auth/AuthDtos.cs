@@ -5,10 +5,12 @@ public sealed record AuthSessionDto(
     string Email,
     string DisplayName,
     bool IsActive,
+    bool IsAdmin,
     DateTimeOffset SignedInAtUtc);
 
 public sealed record CurrentUserDto(
     Guid Id,
     string Email,
     string DisplayName,
-    bool IsActive);
+    bool IsActive,
+    bool IsAdmin);

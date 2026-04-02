@@ -23,5 +23,9 @@ public interface IApplicationDbContext
 
     DbSet<AuditLog> AuditLogs { get; }
 
+    DbSet<MerchantRiskSnapshot> MerchantRiskSnapshots { get; }
+
+    DbSet<BranchRiskSnapshot> BranchRiskSnapshots { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

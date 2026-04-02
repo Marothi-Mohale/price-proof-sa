@@ -68,7 +68,7 @@ internal sealed class AuthService : IAuthService
             throw new NotFoundException($"User '{userId}' was not found.");
         }
 
-        return new CurrentUserDto(user.Id, user.Email, user.DisplayName, user.IsActive);
+        return new CurrentUserDto(user.Id, user.Email, user.DisplayName, user.IsActive, user.IsAdmin);
     }
 
     private static AuthSessionDto MapSession(User user)
@@ -78,6 +78,7 @@ internal sealed class AuthService : IAuthService
             user.Email,
             user.DisplayName,
             user.IsActive,
+            user.IsAdmin,
             DateTimeOffset.UtcNow);
     }
 }

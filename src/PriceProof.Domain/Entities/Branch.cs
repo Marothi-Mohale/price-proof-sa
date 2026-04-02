@@ -1,10 +1,12 @@
 using PriceProof.Domain.Common;
+using PriceProof.Domain.Enums;
 
 namespace PriceProof.Domain.Entities;
 
 public sealed class Branch : SoftDeletableEntity
 {
     private readonly List<DiscrepancyCase> _cases = [];
+    private readonly List<BranchRiskSnapshot> _riskSnapshots = [];
 
     private Branch()
     {
@@ -28,7 +30,15 @@ public sealed class Branch : SoftDeletableEntity
 
     public string? PostalCode { get; private set; }
 
+    public decimal? CurrentRiskScore { get; private set; }
+
+    public RiskLabel? CurrentRiskLabel { get; private set; }
+
+    public DateTimeOffset? RiskUpdatedUtc { get; private set; }
+
     public IReadOnlyCollection<DiscrepancyCase> Cases => _cases;
+
+    public IReadOnlyCollection<BranchRiskSnapshot> RiskSnapshots => _riskSnapshots;
 
     public static Branch Create(
         Guid merchantId,
@@ -70,6 +80,15 @@ public sealed class Branch : SoftDeletableEntity
         City = city.Trim();
         Province = province.Trim();
         PostalCode = Normalize(postalCode);
+        UpdatedUtc = now;
+    }
+
+    public void ApplyRiskSnapshot(BranchRiskSnapshot snapshot, DateTimeOffset now)
+    {
+        _riskSnapshots.Add(snapshot);
+        CurrentRiskScore = snapshot.Score;
+        CurrentRiskLabel = snapshot.Label;
+        RiskUpdatedUtc = snapshot.CalculatedUtc;
         UpdatedUtc = now;
     }
 

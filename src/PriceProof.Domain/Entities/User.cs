@@ -22,6 +22,8 @@ public sealed class User : SoftDeletableEntity
 
     public bool IsActive { get; private set; }
 
+    public bool IsAdmin { get; private set; }
+
     public IReadOnlyCollection<DiscrepancyCase> ReportedCases => _reportedCases;
 
     public IReadOnlyCollection<PriceCapture> PriceCaptures => _priceCaptures;
@@ -32,7 +34,7 @@ public sealed class User : SoftDeletableEntity
 
     public IReadOnlyCollection<AuditLog> AuditLogs => _auditLogs;
 
-    public static User Create(string displayName, string email)
+    public static User Create(string displayName, string email, bool isAdmin = false)
     {
         var trimmedEmail = email.Trim();
 
@@ -41,7 +43,8 @@ public sealed class User : SoftDeletableEntity
             DisplayName = displayName.Trim(),
             Email = trimmedEmail,
             NormalizedEmail = trimmedEmail.ToUpperInvariant(),
-            IsActive = true
+            IsActive = true,
+            IsAdmin = isAdmin
         };
     }
 

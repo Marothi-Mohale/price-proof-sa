@@ -1,6 +1,7 @@
 import type {
   AnalyzeCaseRequest,
   AuthSession,
+  BranchRisk,
   BootstrapLookups,
   CaseAnalysis,
   CaseClassification,
@@ -13,10 +14,12 @@ import type {
   CurrentUser,
   GeneratedComplaintPack,
   GetCasesQuery,
+  MerchantRisk,
   MerchantHistory,
   PagedResult,
   PaymentRecordSummary,
   PriceCaptureSummary,
+  RiskOverview,
   ReceiptSummary,
   RunReceiptOcrResult,
   SignInRequest,
@@ -208,6 +211,15 @@ export const api = {
   },
   getMerchantHistory(merchantId: string) {
     return requestJson<MerchantHistory>(`/merchants/${merchantId}/history`);
+  },
+  getMerchantRisk(merchantId: string) {
+    return requestJson<MerchantRisk>(`/merchants/${merchantId}/risk`);
+  },
+  getBranchRisk(branchId: string) {
+    return requestJson<BranchRisk>(`/branches/${branchId}/risk`);
+  },
+  getRiskOverview(requestedByUserId: string) {
+    return requestJson<RiskOverview>(withQuery("/risk/overview", { requestedByUserId }));
   },
   uploadFile(file: File, category: string, caseId?: string) {
     const formData = new FormData();

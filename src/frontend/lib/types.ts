@@ -42,6 +42,7 @@ export type AuthSession = {
   email: string;
   displayName: string;
   isActive: boolean;
+  isAdmin: boolean;
   signedInAtUtc: string;
 };
 
@@ -50,6 +51,7 @@ export type CurrentUser = {
   email: string;
   displayName: string;
   isActive: boolean;
+  isAdmin: boolean;
 };
 
 export type LookupUser = {
@@ -232,6 +234,90 @@ export type MerchantHistory = {
   needsReviewCases: number;
   matchCases: number;
   recentCases: CaseSummary[];
+};
+
+export type RiskLabel = "Low" | "Moderate" | "High" | "Severe";
+
+export type RiskSnapshot = {
+  modelVersion: string;
+  totalCases: number;
+  analyzedCases: number;
+  likelyCardSurchargeCases: number;
+  confidenceWeightedMismatchTotal: number;
+  recencyWeightedCaseCount: number;
+  dismissedEquivalentRatio: number;
+  unclearCaseRatio: number;
+  score: number;
+  label: RiskLabel;
+  calculatedUtc: string;
+};
+
+export type MerchantRisk = {
+  merchantId: string;
+  merchantName: string;
+  category?: string | null;
+  websiteUrl?: string | null;
+  score: number;
+  label: RiskLabel;
+  totalCases: number;
+  analyzedCases: number;
+  likelyCardSurchargeCases: number;
+  confidenceWeightedMismatchTotal: number;
+  recencyWeightedCaseCount: number;
+  dismissedEquivalentRatio: number;
+  unclearCaseRatio: number;
+  calculatedUtc?: string | null;
+  snapshots: RiskSnapshot[];
+};
+
+export type BranchRisk = {
+  branchId: string;
+  merchantId: string;
+  branchName: string;
+  merchantName: string;
+  city: string;
+  province: string;
+  score: number;
+  label: RiskLabel;
+  totalCases: number;
+  analyzedCases: number;
+  likelyCardSurchargeCases: number;
+  confidenceWeightedMismatchTotal: number;
+  recencyWeightedCaseCount: number;
+  dismissedEquivalentRatio: number;
+  unclearCaseRatio: number;
+  calculatedUtc?: string | null;
+  snapshots: RiskSnapshot[];
+};
+
+export type RiskLeaderboardMerchant = {
+  merchantId: string;
+  merchantName: string;
+  category?: string | null;
+  score: number;
+  label: RiskLabel;
+  totalCases: number;
+  likelyCardSurchargeCases: number;
+  calculatedUtc?: string | null;
+};
+
+export type RiskLeaderboardBranch = {
+  branchId: string;
+  merchantId: string;
+  branchName: string;
+  merchantName: string;
+  city: string;
+  province: string;
+  score: number;
+  label: RiskLabel;
+  totalCases: number;
+  likelyCardSurchargeCases: number;
+  calculatedUtc?: string | null;
+};
+
+export type RiskOverview = {
+  topMerchants: RiskLeaderboardMerchant[];
+  topBranches: RiskLeaderboardBranch[];
 };
 
 export type UploadedFile = {

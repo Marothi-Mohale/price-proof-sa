@@ -15,11 +15,16 @@ internal sealed class CaseService : ICaseService
 
     private readonly IApplicationDbContext _dbContext;
     private readonly IDiscrepancyDetectionEngine _discrepancyDetectionEngine;
+    private readonly IRiskService _riskService;
 
-    public CaseService(IApplicationDbContext dbContext, IDiscrepancyDetectionEngine discrepancyDetectionEngine)
+    public CaseService(
+        IApplicationDbContext dbContext,
+        IDiscrepancyDetectionEngine discrepancyDetectionEngine,
+        IRiskService riskService)
     {
         _dbContext = dbContext;
         _discrepancyDetectionEngine = discrepancyDetectionEngine;
+        _riskService = riskService;
     }
 
     public async Task<CaseDetailDto> CreateAsync(CreateCaseRequest request, CancellationToken cancellationToken)
@@ -159,6 +164,7 @@ internal sealed class CaseService : ICaseService
 
         var now = DateTimeOffset.UtcNow;
         discrepancyCase.ApplyAnalysis(analysis, now);
+        await _riskService.RecalculateAsync(discrepancyCase, now, cancellationToken);
 
         _dbContext.AuditLogs.Add(AuditLog.Create(
             nameof(DiscrepancyCase),

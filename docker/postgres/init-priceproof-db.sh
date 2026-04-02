@@ -11,6 +11,9 @@ fi
 
 if [ ! -s "$data_dir/PG_VERSION" ]; then
   initdb -D "$data_dir" --username=postgres --auth=trust
+  if ! grep -q "host all all all trust" "$data_dir/pg_hba.conf"; then
+    printf "\nhost all all all trust\n" >> "$data_dir/pg_hba.conf"
+  fi
   pg_ctl -D "$data_dir" -o "-c listen_addresses=localhost" -w start
 
   psql --username=postgres --dbname=postgres <<'SQL'
@@ -19,6 +22,10 @@ CREATE DATABASE priceproof OWNER priceproof;
 SQL
 
   pg_ctl -D "$data_dir" -m fast -w stop
+fi
+
+if ! grep -q "host all all all trust" "$data_dir/pg_hba.conf"; then
+  printf "\nhost all all all trust\n" >> "$data_dir/pg_hba.conf"
 fi
 
 exec postgres -D "$data_dir" -c listen_addresses='*'

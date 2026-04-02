@@ -30,6 +30,10 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public DbSet<MerchantRiskSnapshot> MerchantRiskSnapshots => Set<MerchantRiskSnapshot>();
+
+    public DbSet<BranchRiskSnapshot> BranchRiskSnapshots => Set<BranchRiskSnapshot>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -43,6 +47,8 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
         ConfigureReceiptRecords(modelBuilder);
         ConfigureComplaintPacks(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
+        ConfigureMerchantRiskSnapshots(modelBuilder);
+        ConfigureBranchRiskSnapshots(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -55,6 +61,7 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.Email).HasMaxLength(320).IsRequired();
             builder.Property(entity => entity.NormalizedEmail).HasMaxLength(320).IsRequired();
             builder.HasIndex(entity => entity.NormalizedEmail).IsUnique();
+            builder.Property(entity => entity.IsAdmin).IsRequired();
             builder.Property(entity => entity.CreatedUtc).IsRequired();
             builder.Property(entity => entity.UpdatedUtc).IsRequired();
             builder.HasQueryFilter(entity => !entity.IsDeleted);
@@ -67,6 +74,7 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     Email = "admin@priceproof.local",
                     NormalizedEmail = "ADMIN@PRICEPROOF.LOCAL",
                     IsActive = true,
+                    IsAdmin = true,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -79,6 +87,7 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     Email = "investigator@priceproof.local",
                     NormalizedEmail = "INVESTIGATOR@PRICEPROOF.LOCAL",
                     IsActive = true,
+                    IsAdmin = false,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -97,6 +106,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.NormalizedName).HasMaxLength(200).IsRequired();
             builder.Property(entity => entity.Category).HasMaxLength(80);
             builder.Property(entity => entity.WebsiteUrl).HasMaxLength(256);
+            builder.Property(entity => entity.CurrentRiskScore).HasPrecision(5, 2);
+            builder.Property(entity => entity.CurrentRiskLabel);
+            builder.Property(entity => entity.RiskUpdatedUtc);
             builder.HasIndex(entity => entity.NormalizedName).IsUnique();
             builder.Property(entity => entity.CreatedUtc).IsRequired();
             builder.Property(entity => entity.UpdatedUtc).IsRequired();
@@ -110,6 +122,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     NormalizedName = "SHOPRITE",
                     Category = "Groceries",
                     WebsiteUrl = "https://www.shoprite.co.za",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -122,6 +137,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     NormalizedName = "DIS-CHEM",
                     Category = "Pharmacy",
                     WebsiteUrl = "https://www.dischem.co.za",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -134,6 +152,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     NormalizedName = "CHECKERS",
                     Category = "Retail",
                     WebsiteUrl = "https://www.checkers.co.za",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -155,6 +176,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.City).HasMaxLength(120).IsRequired();
             builder.Property(entity => entity.Province).HasMaxLength(120).IsRequired();
             builder.Property(entity => entity.PostalCode).HasMaxLength(20);
+            builder.Property(entity => entity.CurrentRiskScore).HasPrecision(5, 2);
+            builder.Property(entity => entity.CurrentRiskLabel);
+            builder.Property(entity => entity.RiskUpdatedUtc);
             builder.Property(entity => entity.CreatedUtc).IsRequired();
             builder.Property(entity => entity.UpdatedUtc).IsRequired();
             builder.HasQueryFilter(entity => !entity.IsDeleted);
@@ -175,6 +199,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     City = "Johannesburg",
                     Province = "Gauteng",
                     PostalCode = "2196",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -191,6 +218,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     City = "Pretoria",
                     Province = "Gauteng",
                     PostalCode = "0002",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -207,6 +237,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     City = "Johannesburg",
                     Province = "Gauteng",
                     PostalCode = "2196",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -223,6 +256,9 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     City = "Cape Town",
                     Province = "Western Cape",
                     PostalCode = "8005",
+                    CurrentRiskScore = (decimal?)null,
+                    CurrentRiskLabel = (int?)null,
+                    RiskUpdatedUtc = (DateTimeOffset?)null,
                     CreatedUtc = SeedData.SeedTimestamp,
                     UpdatedUtc = SeedData.SeedTimestamp,
                     IsDeleted = false,
@@ -404,6 +440,50 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                 .WithMany(entity => entity.AuditLogs)
                 .HasForeignKey(entity => entity.ActorUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureMerchantRiskSnapshots(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MerchantRiskSnapshot>(builder =>
+        {
+            builder.ToTable("merchant_risk_snapshots");
+            builder.HasKey(entity => entity.Id);
+            builder.Property(entity => entity.ModelVersion).HasMaxLength(32).IsRequired();
+            builder.Property(entity => entity.ConfidenceWeightedMismatchTotal).HasPrecision(18, 2);
+            builder.Property(entity => entity.RecencyWeightedCaseCount).HasPrecision(8, 4);
+            builder.Property(entity => entity.DismissedEquivalentRatio).HasPrecision(5, 4);
+            builder.Property(entity => entity.UnclearCaseRatio).HasPrecision(5, 4);
+            builder.Property(entity => entity.Score).HasPrecision(5, 2);
+            builder.Property(entity => entity.CreatedUtc).IsRequired();
+            builder.Property(entity => entity.UpdatedUtc).IsRequired();
+            builder.HasIndex(entity => new { entity.MerchantId, entity.CalculatedUtc });
+            builder.HasOne(entity => entity.Merchant)
+                .WithMany(entity => entity.RiskSnapshots)
+                .HasForeignKey(entity => entity.MerchantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureBranchRiskSnapshots(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BranchRiskSnapshot>(builder =>
+        {
+            builder.ToTable("branch_risk_snapshots");
+            builder.HasKey(entity => entity.Id);
+            builder.Property(entity => entity.ModelVersion).HasMaxLength(32).IsRequired();
+            builder.Property(entity => entity.ConfidenceWeightedMismatchTotal).HasPrecision(18, 2);
+            builder.Property(entity => entity.RecencyWeightedCaseCount).HasPrecision(8, 4);
+            builder.Property(entity => entity.DismissedEquivalentRatio).HasPrecision(5, 4);
+            builder.Property(entity => entity.UnclearCaseRatio).HasPrecision(5, 4);
+            builder.Property(entity => entity.Score).HasPrecision(5, 2);
+            builder.Property(entity => entity.CreatedUtc).IsRequired();
+            builder.Property(entity => entity.UpdatedUtc).IsRequired();
+            builder.HasIndex(entity => new { entity.BranchId, entity.CalculatedUtc });
+            builder.HasOne(entity => entity.Branch)
+                .WithMany(entity => entity.RiskSnapshots)
+                .HasForeignKey(entity => entity.BranchId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
