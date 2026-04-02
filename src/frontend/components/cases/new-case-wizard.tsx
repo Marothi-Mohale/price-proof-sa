@@ -75,6 +75,18 @@ const captureOptions: { id: CaptureFlow; title: string; description: string; bac
   { id: "receiptOnly", title: "Receipt only", description: "You only have the final receipt for now. Analysis stays blocked until quote evidence exists." }
 ];
 const paymentMethodOptions: PaymentMethod[] = ["Cash", "DebitCard", "CreditCard", "BankTransfer", "Wallet"];
+const supportedRasterMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+const supportedDocumentMimeTypes = ["application/pdf", "text/plain"] as const;
+const supportedAudioVideoMimeTypes = ["audio/mpeg", "audio/mp4", "audio/wav", "video/mp4", "video/webm"] as const;
+const supportedRasterExtensions = [".jpg", ".jpeg", ".png", ".webp"] as const;
+const supportedDocumentExtensions = [".pdf", ".txt"] as const;
+const supportedAudioVideoExtensions = [".mp3", ".m4a", ".wav", ".mp4", ".webm"] as const;
+const receiptFileAccept = [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes].join(",");
+const quoteEvidenceAccept = [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes, ...supportedAudioVideoMimeTypes].join(",");
+const audioVideoEvidenceAccept = supportedAudioVideoMimeTypes.join(",");
+const receiptFileHint = "Supported formats: JPG, PNG, WEBP, PDF, or TXT up to 20 MB.";
+const quoteFileHint = "Supported formats: JPG, PNG, WEBP, PDF, MP3, M4A, WAV, MP4, WEBM, or TXT up to 20 MB.";
+const audioVideoFileHint = "Supported formats: MP3, M4A, WAV, MP4, or WEBM up to 20 MB.";
 
 function analysisTone(classification: string) {
   const value = classification as AnalysisClassification;
@@ -88,6 +100,29 @@ function analysisTone(classification: string) {
   }
 
   return "warning";
+}
+
+function isAllowedFile(file: File, allowedMimeTypes: readonly string[], allowedExtensions: readonly string[]) {
+  const normalizedMimeType = file.type.trim().toLowerCase();
+  if (normalizedMimeType && allowedMimeTypes.includes(normalizedMimeType)) {
+    return true;
+  }
+
+  const normalizedName = file.name.trim().toLowerCase();
+  return allowedExtensions.some((extension) => normalizedName.endsWith(extension));
+}
+
+function validateSelectedFile(
+  file: File | null,
+  allowedMimeTypes: readonly string[],
+  allowedExtensions: readonly string[],
+  message: string)
+{
+  if (!file) {
+    return null;
+  }
+
+  return isAllowedFile(file, allowedMimeTypes, allowedExtensions) ? null : message;
 }
 
 export function NewCaseWizard() {
@@ -210,6 +245,19 @@ export function NewCaseWizard() {
         }
 
         const selectedCapture = captureOptions.find((option) => option.id === draft.captureFlow);
+        const invalidPriceFileMessage = selectedCapture?.requiresMedia
+          ? "Quote evidence must be MP3, M4A, WAV, MP4, or WEBM."
+          : "Quote evidence must be JPG, PNG, WEBP, PDF, MP3, M4A, WAV, MP4, WEBM, or TXT.";
+        const invalidPriceFile = validateSelectedFile(
+          draft.priceFile,
+          selectedCapture?.requiresMedia ? supportedAudioVideoMimeTypes : [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes, ...supportedAudioVideoMimeTypes],
+          selectedCapture?.requiresMedia ? supportedAudioVideoExtensions : [...supportedRasterExtensions, ...supportedDocumentExtensions, ...supportedAudioVideoExtensions],
+          invalidPriceFileMessage);
+
+        if (invalidPriceFile) {
+          nextErrors.priceFile = invalidPriceFile;
+        }
+
         if (selectedCapture?.requiresMedia && !draft.priceFile) {
           nextErrors.priceFile = "Upload an audio or video file for this capture type.";
         }
@@ -237,6 +285,16 @@ export function NewCaseWizard() {
       const amountError = validatePositiveMoney(draft.amount, "Charged amount");
       if (amountError) {
         nextErrors.amount = amountError;
+      }
+
+      const invalidReceiptFile = validateSelectedFile(
+        draft.receiptFile,
+        [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes],
+        [...supportedRasterExtensions, ...supportedDocumentExtensions],
+        "Receipt evidence must be JPG, PNG, WEBP, PDF, or TXT.");
+
+      if (invalidReceiptFile) {
+        nextErrors.receiptFile = invalidReceiptFile;
       }
 
       return nextErrors;
@@ -518,7 +576,7 @@ export function NewCaseWizard() {
       {step === 2 ? (
         <div className="space-y-4">
           {draft.captureFlow === "receiptOnly" ? <Card><CardTitle>Receipt-only case</CardTitle><CardDescription>Skip quoted-price evidence for now. You can still record the final charge and add the missing quote evidence later from the case page.</CardDescription></Card> : null}
-          {draft.captureFlow !== "receiptOnly" ? <Card className="grid gap-4 md:grid-cols-2"><FieldShell htmlFor="quoted-amount" label="Quoted or displayed amount" error={errors.quotedAmount} required><TextInput id="quoted-amount" inputMode="decimal" value={draft.quotedAmount} onChange={(event) => updateDraft("quotedAmount", event.target.value)} /></FieldShell><FieldShell htmlFor="captured-at" label="Captured at" error={errors.capturedAtLocal} required><TextInput id="captured-at" type="datetime-local" value={draft.capturedAtLocal} onChange={(event) => updateDraft("capturedAtLocal", event.target.value)} /></FieldShell><div className="md:col-span-2"><FieldShell htmlFor="price-file" label="Upload quote evidence" error={errors.priceFile} hint={draft.captureFlow === "audioVideoQuote" ? "Audio or video evidence is required for this option." : "If you skip file upload, the app will attach a text evidence note instead."}><TextInput id="price-file" type="file" accept={draft.captureFlow === "audioVideoQuote" ? "audio/*,video/*" : "image/*,application/pdf,audio/*,video/*,text/*"} onChange={(event) => updateDraft("priceFile", event.target.files?.[0] ?? null)} /></FieldShell></div><FieldShell htmlFor="merchant-statement" label="Merchant statement"><TextArea id="merchant-statement" value={draft.merchantStatement} onChange={(event) => updateDraft("merchantStatement", event.target.value)} /></FieldShell><FieldShell htmlFor="price-notes" label="Additional notes"><TextArea id="price-notes" value={draft.priceNotes} onChange={(event) => updateDraft("priceNotes", event.target.value)} /></FieldShell></Card> : null}
+          {draft.captureFlow !== "receiptOnly" ? <Card className="grid gap-4 md:grid-cols-2"><FieldShell htmlFor="quoted-amount" label="Quoted or displayed amount" error={errors.quotedAmount} required><TextInput id="quoted-amount" inputMode="decimal" value={draft.quotedAmount} onChange={(event) => updateDraft("quotedAmount", event.target.value)} /></FieldShell><FieldShell htmlFor="captured-at" label="Captured at" error={errors.capturedAtLocal} required><TextInput id="captured-at" type="datetime-local" value={draft.capturedAtLocal} onChange={(event) => updateDraft("capturedAtLocal", event.target.value)} /></FieldShell><div className="md:col-span-2"><FieldShell htmlFor="price-file" label="Upload quote evidence" error={errors.priceFile} hint={draft.captureFlow === "audioVideoQuote" ? audioVideoFileHint : `${quoteFileHint} If you skip file upload, the app will attach a text evidence note instead.`}><TextInput id="price-file" type="file" accept={draft.captureFlow === "audioVideoQuote" ? audioVideoEvidenceAccept : quoteEvidenceAccept} onChange={(event) => updateDraft("priceFile", event.target.files?.[0] ?? null)} /></FieldShell></div><FieldShell htmlFor="merchant-statement" label="Merchant statement"><TextArea id="merchant-statement" value={draft.merchantStatement} onChange={(event) => updateDraft("merchantStatement", event.target.value)} /></FieldShell><FieldShell htmlFor="price-notes" label="Additional notes"><TextArea id="price-notes" value={draft.priceNotes} onChange={(event) => updateDraft("priceNotes", event.target.value)} /></FieldShell></Card> : null}
           <SelectedFilePreview file={draft.priceFile} title="Quoted price evidence" />
         </div>
       ) : null}
@@ -532,7 +590,7 @@ export function NewCaseWizard() {
             <FieldShell htmlFor="card-last-four" label="Card last four" error={errors.cardLastFour}><TextInput id="card-last-four" maxLength={4} value={draft.cardLastFour} onChange={(event) => updateDraft("cardLastFour", event.target.value)} /></FieldShell>
             <FieldShell htmlFor="payment-reference" label="Payment reference"><TextInput id="payment-reference" value={draft.paymentReference} onChange={(event) => updateDraft("paymentReference", event.target.value)} /></FieldShell>
             <FieldShell htmlFor="merchant-reference" label="Merchant reference"><TextInput id="merchant-reference" value={draft.merchantReference} onChange={(event) => updateDraft("merchantReference", event.target.value)} /></FieldShell>
-            <div className="md:col-span-2"><FieldShell htmlFor="receipt-file" label="Upload receipt evidence" hint="Optional, but strongly recommended for OCR and complaint-pack strength."><TextInput id="receipt-file" type="file" accept="image/*,application/pdf,text/*" onChange={(event) => updateDraft("receiptFile", event.target.files?.[0] ?? null)} /></FieldShell></div>
+            <div className="md:col-span-2"><FieldShell htmlFor="receipt-file" label="Upload receipt evidence" error={errors.receiptFile} hint={`Optional, but strongly recommended for OCR and complaint-pack strength. ${receiptFileHint}`}><TextInput id="receipt-file" type="file" accept={receiptFileAccept} onChange={(event) => updateDraft("receiptFile", event.target.files?.[0] ?? null)} /></FieldShell></div>
             <FieldShell htmlFor="payment-notes" label="Payment notes"><TextArea id="payment-notes" value={draft.paymentNotes} onChange={(event) => updateDraft("paymentNotes", event.target.value)} /></FieldShell>
             <FieldShell htmlFor="receipt-raw" label="Receipt text notes"><TextArea id="receipt-raw" value={draft.receiptRawText} onChange={(event) => updateDraft("receiptRawText", event.target.value)} /></FieldShell>
           </Card>
