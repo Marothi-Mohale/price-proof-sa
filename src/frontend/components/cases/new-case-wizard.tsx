@@ -35,11 +35,14 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ErrorState, LoadingState } from "@/components/ui/state";
 
 type CaptureFlow = "shelfPrice" | "quotedPrice" | "audioVideoQuote" | "receiptOnly";
+type MerchantMode = "known" | "custom";
 
 type DraftState = {
   captureFlow: CaptureFlow;
+  merchantMode: MerchantMode;
   merchantId: string;
   branchId: string;
+  customMerchantName: string;
   basketDescription: string;
   incidentAtLocal: string;
   currencyCode: string;
@@ -85,6 +88,7 @@ const supportedAudioVideoExtensions = [".mp3", ".m4a", ".wav", ".mp4", ".webm"] 
 const receiptFileAccept = [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes].join(",");
 const quoteEvidenceAccept = [...supportedRasterMimeTypes, ...supportedDocumentMimeTypes, ...supportedAudioVideoMimeTypes].join(",");
 const audioVideoEvidenceAccept = supportedAudioVideoMimeTypes.join(",");
+const customMerchantOptionValue = "__custom__";
 const receiptFileHint = "Supported formats: JPG, PNG, WEBP, PDF, or TXT up to 20 MB.";
 const quoteFileHint = "Supported formats: JPG, PNG, WEBP, PDF, MP3, M4A, WAV, MP4, WEBM, or TXT up to 20 MB.";
 const audioVideoFileHint = "Supported formats: MP3, M4A, WAV, MP4, or WEBM up to 20 MB.";
@@ -144,8 +148,10 @@ export function NewCaseWizard() {
   const [generatedPack, setGeneratedPack] = useState<GeneratedComplaintPack | null>(null);
   const [draft, setDraft] = useState<DraftState>({
     captureFlow: "shelfPrice",
+    merchantMode: "known",
     merchantId: "",
     branchId: "",
+    customMerchantName: "",
     basketDescription: "",
     incidentAtLocal: toDateTimeLocalInput(new Date()),
     currencyCode: preferences.preferredCurrency,
@@ -203,12 +209,34 @@ export function NewCaseWizard() {
     };
   }, []);
 
-  const selectedMerchant = lookups?.merchants.find((merchant) => merchant.id === draft.merchantId) ?? null;
+  const selectedMerchant = draft.merchantMode === "known"
+    ? lookups?.merchants.find((merchant) => merchant.id === draft.merchantId) ?? null
+    : null;
   const availableBranches = selectedMerchant?.branches ?? [];
   const canAnalyze = createdCase?.latestQuotedAmount !== null && createdCase?.latestQuotedAmount !== undefined && createdCase?.latestPaidAmount !== null && createdCase?.latestPaidAmount !== undefined;
+  const merchantDisplayName = draft.merchantMode === "custom"
+    ? draft.customMerchantName.trim() || "Not entered"
+    : selectedMerchant?.name ?? "Not selected";
+  const branchDisplayName = draft.merchantMode === "known"
+    ? availableBranches.find((branch) => branch.id === draft.branchId)?.name ?? "Not selected"
+    : "Not applicable";
 
   function updateDraft<K extends keyof DraftState>(key: K, value: DraftState[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setMerchantMode(mode: MerchantMode) {
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.merchantId;
+      delete next.branchId;
+      delete next.customMerchantName;
+      return next;
+    });
+
+    setDraft((current) => mode === "known"
+      ? { ...current, merchantMode: mode, customMerchantName: "" }
+      : { ...current, merchantMode: mode, merchantId: "", branchId: "" });
   }
 
   function validateCurrentStep() {
@@ -218,8 +246,10 @@ export function NewCaseWizard() {
 
     if (step === 1) {
       const parsed = caseDetailsSchema.safeParse({
-        merchantId: draft.merchantId,
-        branchId: draft.branchId,
+        merchantMode: draft.merchantMode,
+        merchantId: draft.merchantMode === "known" ? draft.merchantId : "",
+        branchId: draft.merchantMode === "known" ? draft.branchId : "",
+        customMerchantName: draft.customMerchantName,
         basketDescription: draft.basketDescription,
         incidentAtLocal: draft.incidentAtLocal,
         currencyCode: draft.currencyCode.toUpperCase(),
@@ -333,8 +363,9 @@ export function NewCaseWizard() {
     try {
       const caseResult = await api.createCase({
         reportedByUserId: session.userId,
-        merchantId: draft.merchantId,
-        branchId: draft.branchId || null,
+        merchantId: draft.merchantMode === "known" ? draft.merchantId : null,
+        branchId: draft.merchantMode === "known" ? (draft.branchId || null) : null,
+        customMerchantName: draft.merchantMode === "custom" ? (draft.customMerchantName.trim() || null) : null,
         basketDescription: draft.basketDescription,
         incidentAtUtc: toUtcIsoString(draft.incidentAtLocal),
         currencyCode: draft.currencyCode.toUpperCase(),
@@ -489,8 +520,8 @@ export function NewCaseWizard() {
 
   const reviewItems = [
     ["Capture type", captureOptions.find((option) => option.id === draft.captureFlow)?.title ?? draft.captureFlow],
-    ["Merchant", selectedMerchant?.name ?? "Not selected"],
-    ["Branch", availableBranches.find((branch) => branch.id === draft.branchId)?.name ?? "Not selected"],
+    ["Merchant", merchantDisplayName],
+    ["Branch", branchDisplayName],
     ["Quoted amount", draft.captureFlow === "receiptOnly" ? "Not yet available" : formatCurrency(Number(draft.quotedAmount || 0), draft.currencyCode)],
     ["Charged amount", formatCurrency(Number(draft.amount || 0), draft.currencyCode)]
   ];
@@ -541,35 +572,111 @@ export function NewCaseWizard() {
       ) : null}
 
       {step === 1 ? (
-        <Card className="grid gap-4 md:grid-cols-2">
-          <FieldShell htmlFor="merchant" label="Merchant" error={errors.merchantId} required>
-            <SelectInput id="merchant" value={draft.merchantId} onChange={(event) => { updateDraft("merchantId", event.target.value); updateDraft("branchId", ""); }}>
-              <option value="">Select a merchant</option>
-              {lookups?.merchants.map((merchant) => <option key={merchant.id} value={merchant.id}>{merchant.name}</option>)}
-            </SelectInput>
-          </FieldShell>
-          <FieldShell htmlFor="branch" label="Branch" error={errors.branchId}>
-            <SelectInput id="branch" value={draft.branchId} onChange={(event) => updateDraft("branchId", event.target.value)} disabled={!draft.merchantId}>
-              <option value="">Select a branch</option>
-              {availableBranches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>)}
-            </SelectInput>
-          </FieldShell>
-          <FieldShell htmlFor="basket" label="Basket or item description" error={errors.basketDescription} required>
-            <TextInput id="basket" value={draft.basketDescription} onChange={(event) => updateDraft("basketDescription", event.target.value)} />
-          </FieldShell>
-          <FieldShell htmlFor="incident" label="Incident time" error={errors.incidentAtLocal} required>
-            <TextInput id="incident" type="datetime-local" value={draft.incidentAtLocal} onChange={(event) => updateDraft("incidentAtLocal", event.target.value)} />
-          </FieldShell>
-          <FieldShell htmlFor="currency" label="Currency code" error={errors.currencyCode} required>
-            <TextInput id="currency" value={draft.currencyCode} onChange={(event) => updateDraft("currencyCode", event.target.value.toUpperCase())} />
-          </FieldShell>
-          <FieldShell htmlFor="reference" label="Customer reference" error={errors.customerReference}>
-            <TextInput id="reference" value={draft.customerReference} onChange={(event) => updateDraft("customerReference", event.target.value)} />
-          </FieldShell>
-          <div className="md:col-span-2">
-            <FieldShell htmlFor="notes" label="Case notes" error={errors.notes}>
-              <TextArea id="notes" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} />
+        <Card className="space-y-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              aria-pressed={draft.merchantMode === "known"}
+              onClick={() => setMerchantMode("known")}
+              className={`rounded-[28px] border p-5 text-left transition ${draft.merchantMode === "known" ? "border-amber-500 bg-amber-50" : "border-white/70 bg-white/90 hover:border-slate-300"}`}
+            >
+              <p className="font-display text-xl font-semibold text-slate-950">Choose known merchant</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Use one of the merchants already in the system and optionally tie the case to a branch.</p>
+            </button>
+            <button
+              type="button"
+              aria-pressed={draft.merchantMode === "custom"}
+              onClick={() => setMerchantMode("custom")}
+              className={`rounded-[28px] border p-5 text-left transition ${draft.merchantMode === "custom" ? "border-amber-500 bg-amber-50" : "border-white/70 bg-white/90 hover:border-slate-300"}`}
+            >
+              <p className="font-display text-xl font-semibold text-slate-950">Enter custom merchant</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Use this for informal shops, spaza stores, market stalls, or any merchant that is not listed yet.</p>
+            </button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {draft.merchantMode === "known" ? (
+              <>
+                <FieldShell htmlFor="merchant" label="Merchant" error={errors.merchantId} required>
+                  <SelectInput
+                    id="merchant"
+                    value={draft.merchantId}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      if (nextValue === customMerchantOptionValue) {
+                        setMerchantMode("custom");
+                        return;
+                      }
+
+                      updateDraft("merchantId", nextValue);
+                      updateDraft("branchId", "");
+                    }}
+                  >
+                    <option value="">Select a merchant</option>
+                    {lookups?.merchants.map((merchant) => <option key={merchant.id} value={merchant.id}>{merchant.name}</option>)}
+                    <option value={customMerchantOptionValue}>My merchant is not listed</option>
+                  </SelectInput>
+                  <button
+                    type="button"
+                    onClick={() => setMerchantMode("custom")}
+                    className="mt-3 text-sm font-semibold text-amber-700 underline decoration-amber-300 underline-offset-4 transition hover:text-amber-800"
+                  >
+                    Can't find the merchant? Enter it manually instead.
+                  </button>
+                </FieldShell>
+                <FieldShell htmlFor="branch" label="Branch" error={errors.branchId} hint="Optional if the dispute is tied to a specific branch or store location.">
+                  <SelectInput id="branch" value={draft.branchId} onChange={(event) => updateDraft("branchId", event.target.value)} disabled={!draft.merchantId}>
+                    <option value="">Select a branch</option>
+                    {availableBranches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>)}
+                  </SelectInput>
+                </FieldShell>
+              </>
+            ) : (
+              <>
+                <FieldShell
+                  htmlFor="custom-merchant"
+                  label="Merchant name"
+                  error={errors.customMerchantName}
+                  hint="Use the name the customer would recognise, for example Corner Supermarket or Bheki's Spaza."
+                  required
+                >
+                  <TextInput
+                    id="custom-merchant"
+                    value={draft.customMerchantName}
+                    onChange={(event) => updateDraft("customMerchantName", event.target.value)}
+                    placeholder="Enter the merchant name"
+                  />
+                </FieldShell>
+                <div className="space-y-3 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-5 py-4 text-sm leading-6 text-slate-600">
+                  <p>Custom merchant cases start without a saved branch. You can still continue with price, payment, receipt, analysis, and complaint-pack generation immediately.</p>
+                  <button
+                    type="button"
+                    onClick={() => setMerchantMode("known")}
+                    className="text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-900"
+                  >
+                    Choose from the existing merchant list instead.
+                  </button>
+                </div>
+              </>
+            )}
+
+            <FieldShell htmlFor="basket" label="Basket or item description" error={errors.basketDescription} required>
+              <TextInput id="basket" value={draft.basketDescription} onChange={(event) => updateDraft("basketDescription", event.target.value)} />
             </FieldShell>
+            <FieldShell htmlFor="incident" label="Incident time" error={errors.incidentAtLocal} required>
+              <TextInput id="incident" type="datetime-local" value={draft.incidentAtLocal} onChange={(event) => updateDraft("incidentAtLocal", event.target.value)} />
+            </FieldShell>
+            <FieldShell htmlFor="currency" label="Currency code" error={errors.currencyCode} required>
+              <TextInput id="currency" value={draft.currencyCode} onChange={(event) => updateDraft("currencyCode", event.target.value.toUpperCase())} />
+            </FieldShell>
+            <FieldShell htmlFor="reference" label="Customer reference" error={errors.customerReference}>
+              <TextInput id="reference" value={draft.customerReference} onChange={(event) => updateDraft("customerReference", event.target.value)} />
+            </FieldShell>
+            <div className="md:col-span-2">
+              <FieldShell htmlFor="notes" label="Case notes" error={errors.notes}>
+                <TextArea id="notes" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} />
+              </FieldShell>
+            </div>
           </div>
         </Card>
       ) : null}

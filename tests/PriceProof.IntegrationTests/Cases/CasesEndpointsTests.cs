@@ -78,4 +78,54 @@ public sealed class CasesEndpointsTests : IClassFixture<PriceProofApiFactory>
         fetchedCase.Should().NotBeNull();
         fetchedCase!.AuditLogs.Should().Contain(log => log.Action == "CaseCreated" && log.CorrelationId == correlationId);
     }
+
+    [Fact]
+    public async Task Post_case_with_custom_merchant_should_create_a_new_merchant_record()
+    {
+        var request = new CreateCaseRequest(
+            SeedData.DemoUserId,
+            null,
+            null,
+            "Basic grocery purchase from a local shop",
+            DateTimeOffset.UtcNow.AddMinutes(-12),
+            "ZAR",
+            "CASE-CUSTOM",
+            "User reported an unlisted neighbourhood merchant.",
+            "Corner Supermarket");
+
+        var response = await _client.PostAsJsonAsync("/cases", request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+
+        var createdCase = await response.Content.ReadFromJsonAsync<CaseDetailDto>();
+        createdCase.Should().NotBeNull();
+        createdCase!.Merchant.Name.Should().Be("Corner Supermarket");
+        createdCase.Branch.Should().BeNull();
+        createdCase.AuditLogs.Should().Contain(log => log.Action == "MerchantCreatedFromCaseIntake");
+    }
+
+    [Fact]
+    public async Task Post_case_with_custom_merchant_matching_existing_name_should_reuse_existing_merchant()
+    {
+        var request = new CreateCaseRequest(
+            SeedData.DemoUserId,
+            null,
+            null,
+            "Existing merchant reuse",
+            DateTimeOffset.UtcNow.AddMinutes(-6),
+            "ZAR",
+            "CASE-REUSE",
+            "User typed a known merchant name instead of selecting it.",
+            "  shoprite  ");
+
+        var response = await _client.PostAsJsonAsync("/cases", request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+
+        var createdCase = await response.Content.ReadFromJsonAsync<CaseDetailDto>();
+        createdCase.Should().NotBeNull();
+        createdCase!.Merchant.Id.Should().Be(SeedData.ShopriteMerchantId);
+        createdCase.Merchant.Name.Should().Be("Shoprite");
+        createdCase.AuditLogs.Should().NotContain(log => log.Action == "MerchantCreatedFromCaseIntake");
+    }
 }

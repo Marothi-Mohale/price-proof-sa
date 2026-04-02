@@ -545,8 +545,9 @@ export type GetCasesQuery = {
 
 export type CreateCaseRequest = {
   reportedByUserId: string;
-  merchantId: string;
+  merchantId?: string | null;
   branchId?: string | null;
+  customMerchantName?: string | null;
   basketDescription: string;
   incidentAtUtc: string;
   currencyCode: string;

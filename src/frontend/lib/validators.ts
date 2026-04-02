@@ -10,13 +10,35 @@ export const signUpSchema = z.object({
 });
 
 export const caseDetailsSchema = z.object({
-  merchantId: z.string().uuid("Choose a merchant."),
+  merchantMode: z.enum(["known", "custom"]),
+  merchantId: z.string().uuid("Choose a merchant.").optional().or(z.literal("")),
   branchId: z.string().uuid("Choose a branch.").optional().or(z.literal("")),
+  customMerchantName: z.string().trim().max(200).optional(),
   basketDescription: z.string().trim().min(3, "Describe the basket or item.").max(500),
   incidentAtLocal: z.string().min(1, "Choose when the incident happened."),
   currencyCode: z.string().trim().length(3, "Use a 3-letter currency code."),
   customerReference: z.string().trim().max(64).optional(),
   notes: z.string().trim().max(2000).optional()
+}).superRefine((value, context) => {
+  if (value.merchantMode === "known") {
+    if (!value.merchantId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["merchantId"],
+        message: "Choose a merchant."
+      });
+    }
+
+    return;
+  }
+
+  if (!value.customMerchantName || value.customMerchantName.trim().length < 2) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customMerchantName"],
+      message: "Enter a merchant name."
+    });
+  }
 });
 
 export const priceEvidenceSchema = z.object({

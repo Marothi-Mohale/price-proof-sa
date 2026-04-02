@@ -31,12 +31,15 @@ internal sealed class CaseService : ICaseService
 
     public async Task<CaseDetailDto> CreateAsync(CreateCaseRequest request, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+
         request = request with
         {
             BasketDescription = InputSanitizer.SanitizeRequiredSingleLine(request.BasketDescription, 500),
             CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
             CustomerReference = InputSanitizer.SanitizeSingleLine(request.CustomerReference, 64),
-            Notes = InputSanitizer.SanitizeMultiline(request.Notes, 2000)
+            Notes = InputSanitizer.SanitizeMultiline(request.Notes, 2000),
+            CustomMerchantName = InputSanitizer.SanitizeSingleLine(request.CustomMerchantName, 200)
         };
 
         var user = await _dbContext.Users
@@ -47,30 +50,12 @@ internal sealed class CaseService : ICaseService
             throw new NotFoundException($"User '{request.ReportedByUserId}' was not found.");
         }
 
-        var merchant = await _dbContext.Merchants
-            .SingleOrDefaultAsync(entity => entity.Id == request.MerchantId, cancellationToken);
-
-        if (merchant is null)
-        {
-            throw new NotFoundException($"Merchant '{request.MerchantId}' was not found.");
-        }
-
-        if (request.BranchId.HasValue)
-        {
-            var branchExists = await _dbContext.Branches.AnyAsync(
-                entity => entity.Id == request.BranchId.Value && entity.MerchantId == request.MerchantId,
-                cancellationToken);
-
-            if (!branchExists)
-            {
-                throw new NotFoundException($"Branch '{request.BranchId.Value}' was not found for merchant '{request.MerchantId}'.");
-            }
-        }
+        var merchantResolution = await ResolveMerchantAsync(request, now, cancellationToken);
 
         var discrepancyCase = DiscrepancyCase.Create(
             request.ReportedByUserId,
-            request.MerchantId,
-            request.BranchId,
+            merchantResolution.Merchant.Id,
+            merchantResolution.BranchId,
             request.BasketDescription,
             request.IncidentAtUtc,
             request.CurrencyCode,
@@ -78,11 +63,34 @@ internal sealed class CaseService : ICaseService
             request.Notes);
 
         _dbContext.DiscrepancyCases.Add(discrepancyCase);
+
+        if (merchantResolution.CreatedNewMerchant)
+        {
+            _auditLogWriter.Write(
+                nameof(Merchant),
+                "MerchantCreatedFromCaseIntake",
+                new
+                {
+                    MerchantId = merchantResolution.Merchant.Id,
+                    merchantResolution.Merchant.Name,
+                    discrepancyCase.Id
+                },
+                now,
+                request.ReportedByUserId,
+                discrepancyCase.Id);
+        }
+
         _auditLogWriter.Write(
             nameof(DiscrepancyCase),
             "CaseCreated",
-            request,
-            DateTimeOffset.UtcNow,
+            new
+            {
+                Request = request,
+                MerchantId = merchantResolution.Merchant.Id,
+                BranchId = merchantResolution.BranchId,
+                merchantResolution.CreatedNewMerchant
+            },
+            now,
             request.ReportedByUserId,
             discrepancyCase.Id);
 
@@ -262,4 +270,58 @@ internal sealed class CaseService : ICaseService
             Environment.NewLine,
             parts.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()));
     }
+
+    private async Task<MerchantResolution> ResolveMerchantAsync(
+        CreateCaseRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (request.MerchantId.HasValue && request.MerchantId.Value != Guid.Empty)
+        {
+            var merchant = await _dbContext.Merchants
+                .SingleOrDefaultAsync(entity => entity.Id == request.MerchantId.Value, cancellationToken);
+
+            if (merchant is null)
+            {
+                throw new NotFoundException($"Merchant '{request.MerchantId.Value}' was not found.");
+            }
+
+            if (request.BranchId.HasValue)
+            {
+                var branchExists = await _dbContext.Branches.AnyAsync(
+                    entity => entity.Id == request.BranchId.Value && entity.MerchantId == request.MerchantId.Value,
+                    cancellationToken);
+
+                if (!branchExists)
+                {
+                    throw new NotFoundException($"Branch '{request.BranchId.Value}' was not found for merchant '{request.MerchantId.Value}'.");
+                }
+            }
+
+            return new MerchantResolution(merchant, request.BranchId, CreatedNewMerchant: false);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CustomMerchantName))
+        {
+            throw new BadRequestException("Choose a merchant or enter a custom merchant.");
+        }
+
+        var normalizedMerchantName = request.CustomMerchantName.Trim().ToUpperInvariant();
+        var existingMerchant = await _dbContext.Merchants
+            .SingleOrDefaultAsync(entity => entity.NormalizedName == normalizedMerchantName, cancellationToken);
+
+        if (existingMerchant is not null)
+        {
+            return new MerchantResolution(existingMerchant, BranchId: null, CreatedNewMerchant: false);
+        }
+
+        var createdMerchant = Merchant.Create(request.CustomMerchantName, category: null, websiteUrl: null);
+        createdMerchant.UpdatedUtc = now;
+        createdMerchant.CreatedUtc = now;
+        _dbContext.Merchants.Add(createdMerchant);
+
+        return new MerchantResolution(createdMerchant, BranchId: null, CreatedNewMerchant: true);
+    }
+
+    private sealed record MerchantResolution(Merchant Merchant, Guid? BranchId, bool CreatedNewMerchant);
 }
