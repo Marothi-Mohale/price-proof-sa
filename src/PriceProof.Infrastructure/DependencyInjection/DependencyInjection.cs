@@ -1,3 +1,5 @@
+using System.IO;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +18,7 @@ using PriceProof.Infrastructure.Ocr;
 using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
 using PriceProof.Infrastructure.Persistence.Interceptors;
+using PriceProof.Infrastructure.Seeding;
 using PriceProof.Infrastructure.Uploads;
 
 namespace PriceProof.Infrastructure.DependencyInjection;
@@ -24,7 +27,12 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddDataProtection();
+        var dataProtectionPath = Path.Combine(Directory.GetCurrentDirectory(), ".appdata", "dataprotection");
+        Directory.CreateDirectory(dataProtectionPath);
+
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+            .SetApplicationName("PriceProof.Api");
         services.AddHttpContextAccessor();
         services.AddSingleton<AuditingInterceptor>();
         services.AddScoped<IRequestContextAccessor, HttpContextRequestContextAccessor>();
@@ -91,6 +99,7 @@ public static class DependencyInjection
             try
             {
                 await dbContext.Database.MigrateAsync();
+                await RepairKnownSchemaDriftAsync(dbContext, logger);
                 return;
             }
             catch (Exception exception) when (attempt < maxAttempts)
@@ -106,5 +115,90 @@ public static class DependencyInjection
                 await Task.Delay(delay);
             }
         }
+    }
+
+    private static async Task RepairKnownSchemaDriftAsync(AppDbContext dbContext, ILogger? logger)
+    {
+        const string compatibilitySql = """
+                                        ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisClassification" integer;
+                                        ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisConfidence" numeric(5,4);
+                                        ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisExplanation" character varying(2000);
+                                        ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisUpdatedUtc" timestamp with time zone;
+
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "OcrConfidence" numeric(5,4);
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "OcrLineItemsJson" character varying(16000);
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "OcrPayloadMetadataJson" character varying(32000);
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "OcrProcessedUtc" timestamp with time zone;
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "OcrProviderName" character varying(80);
+                                        ALTER TABLE receipt_records ADD COLUMN IF NOT EXISTS "TransactionAtUtc" timestamp with time zone;
+
+                                        ALTER TABLE merchants ADD COLUMN IF NOT EXISTS "CurrentRiskScore" numeric(5,2);
+                                        ALTER TABLE merchants ADD COLUMN IF NOT EXISTS "CurrentRiskLabel" integer;
+                                        ALTER TABLE merchants ADD COLUMN IF NOT EXISTS "RiskUpdatedUtc" timestamp with time zone;
+
+                                        ALTER TABLE branches ADD COLUMN IF NOT EXISTS "CurrentRiskScore" numeric(5,2);
+                                        ALTER TABLE branches ADD COLUMN IF NOT EXISTS "CurrentRiskLabel" integer;
+                                        ALTER TABLE branches ADD COLUMN IF NOT EXISTS "RiskUpdatedUtc" timestamp with time zone;
+
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "IsAdmin" boolean NOT NULL DEFAULT false;
+
+                                        CREATE TABLE IF NOT EXISTS merchant_risk_snapshots (
+                                            "Id" uuid NOT NULL,
+                                            "MerchantId" uuid NOT NULL,
+                                            "ModelVersion" character varying(32) NOT NULL,
+                                            "TotalCases" integer NOT NULL,
+                                            "AnalyzedCases" integer NOT NULL,
+                                            "LikelyCardSurchargeCases" integer NOT NULL,
+                                            "ConfidenceWeightedMismatchTotal" numeric(18,2) NOT NULL,
+                                            "RecencyWeightedCaseCount" numeric(8,4) NOT NULL,
+                                            "DismissedEquivalentRatio" numeric(5,4) NOT NULL,
+                                            "UnclearCaseRatio" numeric(5,4) NOT NULL,
+                                            "Score" numeric(5,2) NOT NULL,
+                                            "Label" integer NOT NULL,
+                                            "CalculatedUtc" timestamp with time zone NOT NULL,
+                                            "TriggeredByCaseId" uuid NULL,
+                                            "CreatedUtc" timestamp with time zone NOT NULL,
+                                            "UpdatedUtc" timestamp with time zone NOT NULL,
+                                            CONSTRAINT "PK_merchant_risk_snapshots" PRIMARY KEY ("Id"),
+                                            CONSTRAINT "FK_merchant_risk_snapshots_merchants_MerchantId"
+                                                FOREIGN KEY ("MerchantId") REFERENCES merchants ("Id") ON DELETE CASCADE
+                                        );
+
+                                        CREATE TABLE IF NOT EXISTS branch_risk_snapshots (
+                                            "Id" uuid NOT NULL,
+                                            "BranchId" uuid NOT NULL,
+                                            "ModelVersion" character varying(32) NOT NULL,
+                                            "TotalCases" integer NOT NULL,
+                                            "AnalyzedCases" integer NOT NULL,
+                                            "LikelyCardSurchargeCases" integer NOT NULL,
+                                            "ConfidenceWeightedMismatchTotal" numeric(18,2) NOT NULL,
+                                            "RecencyWeightedCaseCount" numeric(8,4) NOT NULL,
+                                            "DismissedEquivalentRatio" numeric(5,4) NOT NULL,
+                                            "UnclearCaseRatio" numeric(5,4) NOT NULL,
+                                            "Score" numeric(5,2) NOT NULL,
+                                            "Label" integer NOT NULL,
+                                            "CalculatedUtc" timestamp with time zone NOT NULL,
+                                            "TriggeredByCaseId" uuid NULL,
+                                            "CreatedUtc" timestamp with time zone NOT NULL,
+                                            "UpdatedUtc" timestamp with time zone NOT NULL,
+                                            CONSTRAINT "PK_branch_risk_snapshots" PRIMARY KEY ("Id"),
+                                            CONSTRAINT "FK_branch_risk_snapshots_branches_BranchId"
+                                                FOREIGN KEY ("BranchId") REFERENCES branches ("Id") ON DELETE CASCADE
+                                        );
+
+                                        CREATE INDEX IF NOT EXISTS "IX_merchant_risk_snapshots_MerchantId_CalculatedUtc"
+                                            ON merchant_risk_snapshots ("MerchantId", "CalculatedUtc");
+                                        CREATE INDEX IF NOT EXISTS "IX_branch_risk_snapshots_BranchId_CalculatedUtc"
+                                            ON branch_risk_snapshots ("BranchId", "CalculatedUtc");
+
+                                        UPDATE users
+                                        SET "IsAdmin" = true
+                                        WHERE "Id" = '11111111-1111-1111-1111-111111111111';
+                                        """;
+
+        await dbContext.Database.ExecuteSqlRawAsync(compatibilitySql);
+        logger?.LogInformation(
+            "Ensured compatibility schema for analysis, OCR, and risk-scoring fields after migrations. Admin seed user: {AdminUserId}",
+            SeedData.AdminUserId);
     }
 }
