@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.ComplaintPacks;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common.Exceptions;
@@ -12,8 +13,7 @@ namespace PriceProof.Application.ComplaintPacks;
 
 internal sealed class ComplaintPackService : IComplaintPackService
 {
-    private static readonly JsonSerializerOptions AuditJsonOptions = new(JsonSerializerDefaults.Web);
-
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IApplicationDbContext _dbContext;
     private readonly IComplaintPackGenerator _complaintPackGenerator;
     private readonly IComplaintPackDocumentStore _documentStore;
@@ -23,12 +23,14 @@ internal sealed class ComplaintPackService : IComplaintPackService
         IApplicationDbContext dbContext,
         IComplaintPackGenerator complaintPackGenerator,
         IComplaintPackDocumentStore documentStore,
-        IComplaintNarrativeComposer complaintNarrativeComposer)
+        IComplaintNarrativeComposer complaintNarrativeComposer,
+        IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
         _complaintPackGenerator = complaintPackGenerator;
         _documentStore = documentStore;
         _complaintNarrativeComposer = complaintNarrativeComposer;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<GeneratedComplaintPackDto> GenerateAsync(Guid caseId, CancellationToken cancellationToken)
@@ -158,10 +160,10 @@ internal sealed class ComplaintPackService : IComplaintPackService
 
         discrepancyCase.AddComplaintPack(complaintPack, now);
         _dbContext.ComplaintPacks.Add(complaintPack);
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(ComplaintPack),
             "ComplaintPackGenerated",
-            JsonSerializer.Serialize(new
+            new
             {
                 ComplaintPackId = complaintPack.Id,
                 discrepancyCase.CaseNumber,
@@ -172,11 +174,10 @@ internal sealed class ComplaintPackService : IComplaintPackService
                 Classification = classification,
                 EvidenceStrength = narrative.EvidenceStrength.ToString(),
                 Summary = narrative.ComplaintSummary
-            }, AuditJsonOptions),
-            Guid.NewGuid().ToString("N"),
+            },
             now,
             discrepancyCase.ReportedByUserId,
-            discrepancyCase.Id));
+            discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -1,7 +1,12 @@
+using System.Diagnostics;
+using System.Threading.RateLimiting;
 using System.Text.Json.Serialization;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PriceProof.Api.Middleware;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application;
 using PriceProof.Application.Cases;
 using PriceProof.Infrastructure.DependencyInjection;
@@ -9,6 +14,10 @@ using Serilog;
 using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.Local.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
 
 builder.Host.UseSerilog((context, services, configuration) =>
@@ -43,6 +52,92 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetPartitionKey(context, "global"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("auth", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetPartitionKey(context, "auth"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 15,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("uploads", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetPartitionKey(context, "uploads"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("ocr", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetPartitionKey(context, "ocr"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("admin", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetPartitionKey(context, "admin"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.OnRejected = async (rejectionContext, cancellationToken) =>
+    {
+        var httpContext = rejectionContext.HttpContext;
+        var correlationId = CorrelationIdMiddleware.GetCorrelationId(httpContext);
+        httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        httpContext.Response.ContentType = "application/problem+json";
+        httpContext.Response.Headers[RequestContextConstants.CorrelationIdHeaderName] = correlationId;
+
+        if (rejectionContext.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            httpContext.Response.Headers.RetryAfter = Math.Ceiling(retryAfter.TotalSeconds).ToString("0");
+        }
+
+        var details = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too many requests.",
+            Type = "https://httpstatuses.com/429",
+            Instance = httpContext.Request.Path,
+            Detail = "The request rate limit has been reached. Please retry shortly."
+        };
+
+        details.Extensions["traceId"] = Activity.Current?.Id ?? httpContext.TraceIdentifier;
+        details.Extensions["correlationId"] = correlationId;
+
+        await httpContext.Response.WriteAsJsonAsync(details, cancellationToken);
+    };
+});
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -50,13 +145,28 @@ var app = builder.Build();
 
 await app.Services.MigrateDatabaseAsync();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseRateLimiter();
 app.UseCors("frontend");
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("CorrelationId", CorrelationIdMiddleware.GetCorrelationId(httpContext));
+    };
+});
 
 app.MapControllers();
 app.MapHealthChecks("/health");
 
 app.Run();
+
+static string GetPartitionKey(HttpContext context, string policyName)
+{
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var userAgent = context.Request.Headers.UserAgent.ToString();
+    return $"{policyName}:{remoteIp}:{userAgent}";
+}
 
 public partial class Program;

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Risk;
@@ -6,6 +7,7 @@ namespace PriceProof.Api.Controllers;
 
 [ApiController]
 [Route("risk")]
+[EnableRateLimiting("admin")]
 public sealed class RiskController : ControllerBase
 {
     [HttpGet("overview")]

@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Uploads;
 
@@ -9,6 +11,7 @@ namespace PriceProof.Api.Controllers;
 public sealed class UploadsController : ControllerBase
 {
     [HttpPost]
+    [EnableRateLimiting("uploads")]
     [RequestFormLimits(MultipartBodyLengthLimit = 20 * 1024 * 1024)]
     [RequestSizeLimit(20 * 1024 * 1024)]
     [ProducesResponseType(typeof(UploadedFileDto), StatusCodes.Status201Created)]
@@ -17,9 +20,25 @@ public sealed class UploadsController : ControllerBase
         [FromForm] string category,
         [FromForm] Guid? caseId,
         [FromServices] IFileUploadService fileUploadService,
+        [FromServices] IAuditLogWriter auditLogWriter,
         CancellationToken cancellationToken)
     {
         var result = await fileUploadService.UploadAsync(file, category, caseId, cancellationToken);
+        await auditLogWriter.WriteAndSaveAsync(
+            "FileUpload",
+            "UploadCreated",
+            new
+            {
+                result.FileName,
+                result.ContentType,
+                result.StoragePath,
+                result.ContentHash,
+                result.SizeBytes,
+                Category = category
+            },
+            DateTimeOffset.UtcNow,
+            caseId: caseId,
+            cancellationToken: cancellationToken);
         return Created($"/uploads/content?path={Uri.EscapeDataString(result.StoragePath)}", result);
     }
 

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.ReceiptRecords;
@@ -20,6 +21,7 @@ public sealed class ReceiptRecordsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/run-ocr")]
+    [EnableRateLimiting("ocr")]
     [ProducesResponseType(typeof(RunReceiptOcrResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<RunReceiptOcrResultDto>> RunOcrAsync(
         Guid id,

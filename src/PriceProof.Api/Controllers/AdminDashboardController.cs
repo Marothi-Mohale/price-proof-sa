@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Admin;
@@ -7,6 +8,7 @@ namespace PriceProof.Api.Controllers;
 
 [ApiController]
 [Route("admin/dashboard")]
+[EnableRateLimiting("admin")]
 public sealed class AdminDashboardController : ControllerBase
 {
     [HttpGet("summary")]

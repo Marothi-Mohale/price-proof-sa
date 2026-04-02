@@ -1,7 +1,8 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Entities;
 
@@ -9,15 +10,28 @@ namespace PriceProof.Application.PriceCaptures;
 
 internal sealed class PriceCaptureService : IPriceCaptureService
 {
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IApplicationDbContext _dbContext;
 
-    public PriceCaptureService(IApplicationDbContext dbContext)
+    public PriceCaptureService(IApplicationDbContext dbContext, IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<PriceCaptureDto> CreateAsync(CreatePriceCaptureRequest request, CancellationToken cancellationToken)
     {
+        request = request with
+        {
+            CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
+            FileName = InputSanitizer.SanitizeRequiredSingleLine(request.FileName, 260),
+            EvidenceStoragePath = InputSanitizer.SanitizeRequiredSingleLine(request.EvidenceStoragePath, 500),
+            ContentType = InputSanitizer.SanitizeSingleLine(request.ContentType, 120),
+            EvidenceHash = InputSanitizer.SanitizeHash(request.EvidenceHash, 128),
+            MerchantStatement = InputSanitizer.SanitizeMultiline(request.MerchantStatement, 2000),
+            Notes = InputSanitizer.SanitizeMultiline(request.Notes, 2000)
+        };
+
         var discrepancyCase = await _dbContext.DiscrepancyCases
             .Include(entity => entity.PaymentRecords)
                 .ThenInclude(record => record.ReceiptRecord)
@@ -54,14 +68,13 @@ internal sealed class PriceCaptureService : IPriceCaptureService
         var now = DateTimeOffset.UtcNow;
         discrepancyCase.AddPriceCapture(capture, now);
         _dbContext.PriceCaptures.Add(capture);
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(PriceCapture),
             "PriceCaptureCreated",
-            JsonSerializer.Serialize(request),
-            Guid.NewGuid().ToString("N"),
+            request,
             now,
             request.CapturedByUserId,
-            request.CaseId));
+            request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -1,8 +1,10 @@
 using System.Text.Json;
 using PriceProof.Application.Abstractions.Ocr;
 using Microsoft.EntityFrameworkCore;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Entities;
 
@@ -12,6 +14,7 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IApplicationDbContext _dbContext;
     private readonly IReceiptDocumentContentResolver _documentContentResolver;
     private readonly IOcrOrchestrator _ocrOrchestrator;
@@ -19,15 +22,29 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
     public ReceiptRecordService(
         IApplicationDbContext dbContext,
         IReceiptDocumentContentResolver documentContentResolver,
-        IOcrOrchestrator ocrOrchestrator)
+        IOcrOrchestrator ocrOrchestrator,
+        IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
         _documentContentResolver = documentContentResolver;
         _ocrOrchestrator = ocrOrchestrator;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<ReceiptRecordDto> CreateAsync(CreateReceiptRecordRequest request, CancellationToken cancellationToken)
     {
+        request = request with
+        {
+            FileName = InputSanitizer.SanitizeRequiredSingleLine(request.FileName, 260),
+            ContentType = InputSanitizer.SanitizeRequiredSingleLine(request.ContentType, 120),
+            StoragePath = InputSanitizer.SanitizeRequiredSingleLine(request.StoragePath, 500),
+            CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
+            ReceiptNumber = InputSanitizer.SanitizeSingleLine(request.ReceiptNumber, 64),
+            MerchantName = InputSanitizer.SanitizeSingleLine(request.MerchantName, 200),
+            RawText = InputSanitizer.SanitizeMultiline(request.RawText, 16000),
+            FileHash = InputSanitizer.SanitizeHash(request.FileHash, 128)
+        };
+
         var paymentRecord = await _dbContext.PaymentRecords
             .Include(entity => entity.Case)
             .Include(entity => entity.ReceiptRecord)
@@ -76,14 +93,13 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
         paymentRecord.AttachReceipt(receiptRecord, now);
         paymentRecord.Case?.MarkReceiptReceived(now);
         _dbContext.ReceiptRecords.Add(receiptRecord);
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(ReceiptRecord),
             "ReceiptRecordCreated",
-            JsonSerializer.Serialize(request),
-            Guid.NewGuid().ToString("N"),
+            request,
             now,
             request.UploadedByUserId,
-            request.CaseId));
+            request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -122,10 +138,10 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
             ocrResult.ReceiptNumber,
             lineItemsJson);
 
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(ReceiptRecord),
             "ReceiptOcrCompleted",
-            JsonSerializer.Serialize(new
+            new
             {
                 ReceiptRecordId = receiptRecord.Id,
                 receiptRecord.CaseId,
@@ -135,11 +151,10 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
                 ocrResult.TransactionTotal,
                 ocrResult.TransactionAtUtc,
                 LineItemCount = ocrResult.LineItems.Count
-            }, JsonOptions),
-            Guid.NewGuid().ToString("N"),
+            },
             processedAtUtc,
             receiptRecord.UploadedByUserId,
-            receiptRecord.CaseId));
+            receiptRecord.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

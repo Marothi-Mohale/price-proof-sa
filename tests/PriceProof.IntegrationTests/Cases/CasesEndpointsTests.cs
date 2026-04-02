@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Cases;
 using PriceProof.Infrastructure.Seeding;
 
@@ -45,5 +46,36 @@ public sealed class CasesEndpointsTests : IClassFixture<PriceProofApiFactory>
         fetchedCase.Should().NotBeNull();
         fetchedCase!.Id.Should().Be(createdCase.Id);
         fetchedCase.CaseNumber.Should().Be(createdCase.CaseNumber);
+    }
+
+    [Fact]
+    public async Task Post_case_should_echo_correlation_id_and_store_it_in_audit_log()
+    {
+        const string correlationId = "integration-case-correlation";
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/cases")
+        {
+            Content = JsonContent.Create(new CreateCaseRequest(
+                SeedData.DemoUserId,
+                SeedData.ShopriteMerchantId,
+                SeedData.ShopriteSandtonBranchId,
+                "Correlation check basket",
+                DateTimeOffset.UtcNow.AddMinutes(-10),
+                "ZAR",
+                "CASE-CORRELATION",
+                "Correlation integration test."))
+        };
+        request.Headers.Add(RequestContextConstants.CorrelationIdHeaderName, correlationId);
+
+        var createResponse = await _client.SendAsync(request);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createResponse.Headers.GetValues(RequestContextConstants.CorrelationIdHeaderName).Should().ContainSingle(correlationId);
+
+        var createdCase = await createResponse.Content.ReadFromJsonAsync<CaseDetailDto>();
+        createdCase.Should().NotBeNull();
+
+        var fetchedCase = await _client.GetFromJsonAsync<CaseDetailDto>($"/cases/{createdCase!.Id}");
+        fetchedCase.Should().NotBeNull();
+        fetchedCase!.AuditLogs.Should().Contain(log => log.Action == "CaseCreated" && log.CorrelationId == correlationId);
     }
 }

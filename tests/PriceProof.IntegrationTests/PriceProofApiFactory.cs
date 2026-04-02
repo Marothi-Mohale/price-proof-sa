@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -30,6 +31,7 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
 
         builder.ConfigureServices(services =>
         {
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
             services.RemoveAll<IApplicationDbContext>();
@@ -57,6 +59,7 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.SecondaryProvider = "GoogleVision";
                 options.RequestTimeoutSeconds = 5;
                 options.RetryCount = 0;
+                options.ProviderRetryCount = 0;
                 options.StorageRootPath = _storageRootPath!;
             });
             services.PostConfigure<ComplaintPackOptions>(options =>
@@ -65,6 +68,11 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.StorageRootPath = _storageRootPath!;
                 options.IncludeEvidencePreviews = true;
                 options.IncludeEvidenceReferences = true;
+            });
+            services.PostConfigure<FileUploadOptions>(options =>
+            {
+                options.StorageRootPath = _storageRootPath!;
+                options.MaxFileSizeBytes = 1 * 1024 * 1024;
             });
         });
     }

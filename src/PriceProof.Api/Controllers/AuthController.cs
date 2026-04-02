@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Auth;
@@ -9,6 +10,7 @@ namespace PriceProof.Api.Controllers;
 public sealed class AuthController : ControllerBase
 {
     [HttpPost("sign-up")]
+    [EnableRateLimiting("auth")]
     [ProducesResponseType(typeof(AuthSessionDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthSessionDto>> SignUpAsync(
         [FromBody] SignUpRequest request,
@@ -20,6 +22,7 @@ public sealed class AuthController : ControllerBase
     }
 
     [HttpPost("sign-in")]
+    [EnableRateLimiting("auth")]
     [ProducesResponseType(typeof(AuthSessionDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthSessionDto>> SignInAsync(
         [FromBody] SignInRequest request,

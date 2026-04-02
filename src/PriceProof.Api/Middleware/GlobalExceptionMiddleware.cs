@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Common.Exceptions;
 
 namespace PriceProof.Api.Middleware;
@@ -35,6 +36,11 @@ public sealed class GlobalExceptionMiddleware
                 .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray());
 
             await WriteProblemAsync(context, StatusCodes.Status400BadRequest, "Validation failed.", errors, _environment, exception);
+        }
+        catch (BadRequestException exception)
+        {
+            _logger.LogWarning(exception, "Bad request for {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status400BadRequest, exception.Message, null, _environment, exception);
         }
         catch (NotFoundException exception)
         {
@@ -82,7 +88,10 @@ public sealed class GlobalExceptionMiddleware
             Instance = context.Request.Path
         };
 
+        var correlationId = CorrelationIdMiddleware.GetCorrelationId(context);
         details.Extensions["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier;
+        details.Extensions["correlationId"] = correlationId;
+        context.Response.Headers[RequestContextConstants.CorrelationIdHeaderName] = correlationId;
 
         if (errors is not null)
         {

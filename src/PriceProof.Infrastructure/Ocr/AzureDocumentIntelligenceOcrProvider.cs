@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Infrastructure.Options;
@@ -11,12 +12,19 @@ namespace PriceProof.Infrastructure.Ocr;
 public sealed class AzureDocumentIntelligenceOcrProvider : IOcrProvider
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<AzureDocumentIntelligenceOcrProvider> _logger;
+    private readonly OcrOptions _ocrOptions;
     private readonly OcrOptions.AzureDocumentIntelligenceOptions _options;
 
-    public AzureDocumentIntelligenceOcrProvider(HttpClient httpClient, IOptions<OcrOptions> options)
+    public AzureDocumentIntelligenceOcrProvider(
+        HttpClient httpClient,
+        IOptions<OcrOptions> options,
+        ILogger<AzureDocumentIntelligenceOcrProvider> logger)
     {
         _httpClient = httpClient;
-        _options = options.Value.AzureDocumentIntelligence;
+        _logger = logger;
+        _ocrOptions = options.Value;
+        _options = _ocrOptions.AzureDocumentIntelligence;
     }
 
     public string Name => "AzureDocumentIntelligence";
@@ -32,19 +40,29 @@ public sealed class AzureDocumentIntelligenceOcrProvider : IOcrProvider
             return Failure("Azure Document Intelligence is not configured.", false);
         }
 
-        using var message = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"{_options.Endpoint!.TrimEnd('/')}/documentintelligence/documentModels/{_options.ModelId}:analyze?api-version={_options.ApiVersion}");
+        var requestUri =
+            $"{_options.Endpoint!.TrimEnd('/')}/documentintelligence/documentModels/{_options.ModelId}:analyze?api-version={_options.ApiVersion}";
 
-        message.Headers.Add("Ocp-Apim-Subscription-Key", _options.ApiKey);
-        message.Content = new ByteArrayContent(document.Content);
-        message.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(
-            string.IsNullOrWhiteSpace(document.ContentType) ? "application/octet-stream" : document.ContentType);
+        using var response = await OcrHttpRetryPolicy.ExecuteAsync(
+            async token =>
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, requestUri);
+                message.Headers.Add("Ocp-Apim-Subscription-Key", _options.ApiKey);
+                message.Content = new ByteArrayContent(document.Content);
+                message.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(
+                    string.IsNullOrWhiteSpace(document.ContentType) ? "application/octet-stream" : document.ContentType);
 
-        using var response = await _httpClient.SendAsync(message, cancellationToken);
+                return await _httpClient.SendAsync(message, token);
+            },
+            _ocrOptions.ProviderRetryCount,
+            _ocrOptions.ProviderRetryDelayMilliseconds,
+            Name,
+            "analyze",
+            _logger,
+            cancellationToken);
         if (response.StatusCode is not HttpStatusCode.Accepted and not HttpStatusCode.OK)
         {
-            return Failure($"Azure Document Intelligence request failed with status {(int)response.StatusCode}.", IsTransientStatus(response.StatusCode));
+            return Failure($"Azure Document Intelligence request failed with status {(int)response.StatusCode}.", OcrHttpRetryPolicy.IsTransientStatus(response.StatusCode));
         }
 
         var operationLocation = response.Headers.TryGetValues("operation-location", out var values)
@@ -62,12 +80,19 @@ public sealed class AzureDocumentIntelligenceOcrProvider : IOcrProvider
         {
             await Task.Delay(Math.Max(250, _options.PollingIntervalMilliseconds), cancellationToken);
 
-            using var pollResponse = await _httpClient.GetAsync(operationLocation, cancellationToken);
+            using var pollResponse = await OcrHttpRetryPolicy.ExecuteAsync(
+                token => _httpClient.GetAsync(operationLocation, token),
+                _ocrOptions.ProviderRetryCount,
+                _ocrOptions.ProviderRetryDelayMilliseconds,
+                Name,
+                "poll",
+                _logger,
+                cancellationToken);
             if (!pollResponse.IsSuccessStatusCode)
             {
                 if (attempt == _options.MaxPollingAttempts - 1)
                 {
-                    return Failure($"Azure Document Intelligence polling failed with status {(int)pollResponse.StatusCode}.", IsTransientStatus(pollResponse.StatusCode));
+                    return Failure($"Azure Document Intelligence polling failed with status {(int)pollResponse.StatusCode}.", OcrHttpRetryPolicy.IsTransientStatus(pollResponse.StatusCode));
                 }
 
                 continue;
@@ -308,12 +333,6 @@ public sealed class AzureDocumentIntelligenceOcrProvider : IOcrProvider
     {
         var available = values.Where(value => value.HasValue).Select(value => value!.Value).ToArray();
         return available.Length == 0 ? null : decimal.Round(available.Average(), 4, MidpointRounding.AwayFromZero);
-    }
-
-    private static bool IsTransientStatus(HttpStatusCode statusCode)
-    {
-        var status = (int)statusCode;
-        return status == 408 || status == 429 || status >= 500;
     }
 
     private static OcrProviderResult Failure(string message, bool isTransientFailure)

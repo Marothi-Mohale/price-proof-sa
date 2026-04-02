@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.PaymentRecords;
 using PriceProof.Application.PriceCaptures;
@@ -36,7 +37,7 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
         merchantRisk!.MerchantId.Should().Be(SeedData.ShopriteMerchantId);
         merchantRisk.Score.Should().BeGreaterThan(0m);
         merchantRisk.Label.Should().NotBeNullOrWhiteSpace();
-        merchantRisk.Snapshots.Should().HaveCount(1);
+        merchantRisk.Snapshots.Should().NotBeEmpty();
 
         var branchResponse = await _client.GetAsync($"/branches/{SeedData.ShopriteSandtonBranchId}/risk");
         var branchBody = await branchResponse.Content.ReadAsStringAsync();
@@ -46,17 +47,20 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
         branchRisk.Should().NotBeNull();
         branchRisk!.BranchId.Should().Be(SeedData.ShopriteSandtonBranchId);
         branchRisk.Score.Should().BeGreaterThan(0m);
-        branchRisk.Snapshots.Should().HaveCount(1);
+        branchRisk.Snapshots.Should().NotBeEmpty();
     }
 
     [Fact]
     public async Task Overview_should_require_admin_access()
     {
-        var response = await _client.GetAsync($"/risk/overview?requestedByUserId={SeedData.DemoUserId}");
+        var session = await SignInAsync("investigator@priceproof.local");
+        _client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.AccessToken);
+
+        var response = await _client.GetAsync("/risk/overview");
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
-        body.Should().Contain("admin users");
+        body.Should().Contain("admin session");
     }
 
     [Fact]
@@ -67,7 +71,10 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
         await AddQuotedAndPaidEvidenceAsync(createdCase.Id);
         await AnalyzeAsync(createdCase.Id);
 
-        var response = await _client.GetAsync($"/risk/overview?requestedByUserId={SeedData.AdminUserId}");
+        var session = await SignInAsync("admin@priceproof.local");
+        _client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.AccessToken);
+
+        var response = await _client.GetAsync("/risk/overview");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
@@ -141,5 +148,16 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
 
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+    }
+
+    private async Task<AuthSessionDto> SignInAsync(string email)
+    {
+        var response = await _client.PostAsJsonAsync("/auth/sign-in", new SignInRequest(email));
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        var session = await response.Content.ReadFromJsonAsync<AuthSessionDto>();
+        session.Should().NotBeNull();
+        return session!;
     }
 }

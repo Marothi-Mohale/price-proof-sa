@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Infrastructure.Options;
@@ -10,12 +11,19 @@ namespace PriceProof.Infrastructure.Ocr;
 public sealed class GoogleVisionOcrProvider : IOcrProvider
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<GoogleVisionOcrProvider> _logger;
+    private readonly OcrOptions _ocrOptions;
     private readonly OcrOptions.GoogleVisionOptions _options;
 
-    public GoogleVisionOcrProvider(HttpClient httpClient, IOptions<OcrOptions> options)
+    public GoogleVisionOcrProvider(
+        HttpClient httpClient,
+        IOptions<OcrOptions> options,
+        ILogger<GoogleVisionOcrProvider> logger)
     {
         _httpClient = httpClient;
-        _options = options.Value.GoogleVision;
+        _logger = logger;
+        _ocrOptions = options.Value;
+        _options = _ocrOptions.GoogleVision;
     }
 
     public string Name => "GoogleVision";
@@ -29,24 +37,31 @@ public sealed class GoogleVisionOcrProvider : IOcrProvider
             return Failure("Google Vision is not configured.", false);
         }
 
-        using var response = await _httpClient.PostAsJsonAsync(
-            $"https://vision.googleapis.com/v1/images:annotate?key={_options.ApiKey}",
-            new
-            {
-                requests = new[]
+        using var response = await OcrHttpRetryPolicy.ExecuteAsync(
+            token => _httpClient.PostAsJsonAsync(
+                $"https://vision.googleapis.com/v1/images:annotate?key={_options.ApiKey}",
+                new
                 {
-                    new
+                    requests = new[]
                     {
-                        image = new { content = Convert.ToBase64String(document.Content) },
-                        features = new[] { new { type = "DOCUMENT_TEXT_DETECTION" } }
+                        new
+                        {
+                            image = new { content = Convert.ToBase64String(document.Content) },
+                            features = new[] { new { type = "DOCUMENT_TEXT_DETECTION" } }
+                        }
                     }
-                }
-            },
+                },
+                token),
+            _ocrOptions.ProviderRetryCount,
+            _ocrOptions.ProviderRetryDelayMilliseconds,
+            Name,
+            "annotate",
+            _logger,
             cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            return Failure($"Google Vision request failed with status {(int)response.StatusCode}.", IsTransientStatus(response.StatusCode));
+            return Failure($"Google Vision request failed with status {(int)response.StatusCode}.", OcrHttpRetryPolicy.IsTransientStatus(response.StatusCode));
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -119,12 +134,6 @@ public sealed class GoogleVisionOcrProvider : IOcrProvider
         }
 
         return values.Count == 0 ? null : decimal.Round(values.Average(), 4, MidpointRounding.AwayFromZero);
-    }
-
-    private static bool IsTransientStatus(HttpStatusCode statusCode)
-    {
-        var status = (int)statusCode;
-        return status == 408 || status == 429 || status >= 500;
     }
 
     private static OcrProviderResult Failure(string message, bool isTransientFailure)

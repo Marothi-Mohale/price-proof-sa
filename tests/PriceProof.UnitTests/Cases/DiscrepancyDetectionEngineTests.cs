@@ -77,6 +77,22 @@ public sealed class DiscrepancyDetectionEngineTests
     }
 
     [Fact]
+    public void Should_prioritize_card_surcharge_when_multiple_positive_mismatch_signals_exist()
+    {
+        var result = _engine.Analyze(new DiscrepancyAnalysisInput(
+            100m,
+            115m,
+            "ZAR",
+            MerchantSaidCardFee: true,
+            CashbackPresent: true,
+            DeliveryOrServiceFeePresent: true,
+            EvidenceText: "Merchant mentioned cashback and service charge."));
+
+        result.Classification.Should().Be(DiscrepancyAnalysisClassification.LikelyCardSurcharge);
+        result.Confidence.Should().Be(0.94m);
+    }
+
+    [Fact]
     public void Should_fall_back_to_unclear_positive_mismatch_without_explanatory_signals()
     {
         var result = _engine.Analyze(new DiscrepancyAnalysisInput(39.99m, 44.99m, "ZAR", EvidenceText: "Paid at the till."));
@@ -116,6 +132,19 @@ public sealed class DiscrepancyDetectionEngineTests
             EvidenceText: "A service fee was applied for delivery."));
 
         result.Classification.Should().Be(DiscrepancyAnalysisClassification.UnclearPositiveMismatch);
+    }
+
+    [Fact]
+    public void Should_detect_card_fee_signal_when_text_uses_mixed_case_and_punctuation()
+    {
+        var result = _engine.Analyze(new DiscrepancyAnalysisInput(
+            89.99m,
+            94.99m,
+            "ZAR",
+            EvidenceText: "Cashier said: CARD surcharge applied."));
+
+        result.Classification.Should().Be(DiscrepancyAnalysisClassification.LikelyCardSurcharge);
+        result.Explanation.Should().Contain("card surcharge");
     }
 
     [Fact]

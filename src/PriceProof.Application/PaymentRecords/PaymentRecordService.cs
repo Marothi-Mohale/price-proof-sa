@@ -1,7 +1,8 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Entities;
 
@@ -9,15 +10,26 @@ namespace PriceProof.Application.PaymentRecords;
 
 internal sealed class PaymentRecordService : IPaymentRecordService
 {
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IApplicationDbContext _dbContext;
 
-    public PaymentRecordService(IApplicationDbContext dbContext)
+    public PaymentRecordService(IApplicationDbContext dbContext, IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<PaymentRecordDto> CreateAsync(CreatePaymentRecordRequest request, CancellationToken cancellationToken)
     {
+        request = request with
+        {
+            CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
+            PaymentReference = InputSanitizer.SanitizeSingleLine(request.PaymentReference, 64),
+            MerchantReference = InputSanitizer.SanitizeSingleLine(request.MerchantReference, 64),
+            CardLastFour = InputSanitizer.SanitizeSingleLine(request.CardLastFour, 4),
+            Notes = InputSanitizer.SanitizeMultiline(request.Notes, 2000)
+        };
+
         var discrepancyCase = await _dbContext.DiscrepancyCases
             .Include(entity => entity.PriceCaptures)
             .SingleOrDefaultAsync(entity => entity.Id == request.CaseId, cancellationToken);
@@ -50,14 +62,13 @@ internal sealed class PaymentRecordService : IPaymentRecordService
         var now = DateTimeOffset.UtcNow;
         discrepancyCase.AddPaymentRecord(paymentRecord, now);
         _dbContext.PaymentRecords.Add(paymentRecord);
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(PaymentRecord),
             "PaymentRecordCreated",
-            JsonSerializer.Serialize(request),
-            Guid.NewGuid().ToString("N"),
+            request,
             now,
             request.RecordedByUserId,
-            request.CaseId));
+            request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

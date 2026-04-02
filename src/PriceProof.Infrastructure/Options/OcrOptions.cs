@@ -14,6 +14,10 @@ public sealed class OcrOptions
 
     public int RequestTimeoutSeconds { get; set; } = 20;
 
+    public int ProviderRetryCount { get; set; } = 2;
+
+    public int ProviderRetryDelayMilliseconds { get; set; } = 500;
+
     public string StorageRootPath { get; set; } = "storage";
 
     public AzureDocumentIntelligenceOptions AzureDocumentIntelligence { get; set; } = new();

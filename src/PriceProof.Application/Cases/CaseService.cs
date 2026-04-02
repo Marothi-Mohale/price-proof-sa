@@ -1,7 +1,8 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Application.Common.Models;
 using PriceProof.Domain.Entities;
@@ -11,8 +12,7 @@ namespace PriceProof.Application.Cases;
 
 internal sealed class CaseService : ICaseService
 {
-    private static readonly JsonSerializerOptions AuditJsonOptions = new(JsonSerializerDefaults.Web);
-
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IApplicationDbContext _dbContext;
     private readonly IDiscrepancyDetectionEngine _discrepancyDetectionEngine;
     private readonly IRiskService _riskService;
@@ -20,15 +20,25 @@ internal sealed class CaseService : ICaseService
     public CaseService(
         IApplicationDbContext dbContext,
         IDiscrepancyDetectionEngine discrepancyDetectionEngine,
-        IRiskService riskService)
+        IRiskService riskService,
+        IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
         _discrepancyDetectionEngine = discrepancyDetectionEngine;
         _riskService = riskService;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<CaseDetailDto> CreateAsync(CreateCaseRequest request, CancellationToken cancellationToken)
     {
+        request = request with
+        {
+            BasketDescription = InputSanitizer.SanitizeRequiredSingleLine(request.BasketDescription, 500),
+            CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
+            CustomerReference = InputSanitizer.SanitizeSingleLine(request.CustomerReference, 64),
+            Notes = InputSanitizer.SanitizeMultiline(request.Notes, 2000)
+        };
+
         var user = await _dbContext.Users
             .SingleOrDefaultAsync(entity => entity.Id == request.ReportedByUserId, cancellationToken);
 
@@ -68,14 +78,13 @@ internal sealed class CaseService : ICaseService
             request.Notes);
 
         _dbContext.DiscrepancyCases.Add(discrepancyCase);
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(DiscrepancyCase),
             "CaseCreated",
-            JsonSerializer.Serialize(request, AuditJsonOptions),
-            Guid.NewGuid().ToString("N"),
+            request,
             DateTimeOffset.UtcNow,
             request.ReportedByUserId,
-            discrepancyCase.Id));
+            discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -137,6 +146,11 @@ internal sealed class CaseService : ICaseService
 
     public async Task<CaseAnalysisDto> AnalyzeAsync(Guid id, AnalyzeCaseRequest request, CancellationToken cancellationToken)
     {
+        request = request with
+        {
+            EvidenceText = InputSanitizer.SanitizeMultiline(request.EvidenceText, 2000)
+        };
+
         var discrepancyCase = await _dbContext.DiscrepancyCases
             .Include(entity => entity.PriceCaptures)
             .Include(entity => entity.PaymentRecords)
@@ -166,10 +180,10 @@ internal sealed class CaseService : ICaseService
         discrepancyCase.ApplyAnalysis(analysis, now);
         await _riskService.RecalculateAsync(discrepancyCase, now, cancellationToken);
 
-        _dbContext.AuditLogs.Add(AuditLog.Create(
+        _auditLogWriter.Write(
             nameof(DiscrepancyCase),
             "CaseAnalyzed",
-            JsonSerializer.Serialize(new
+            new
             {
                 CaseId = discrepancyCase.Id,
                 Request = request,
@@ -183,11 +197,10 @@ internal sealed class CaseService : ICaseService
                     analysis.Confidence,
                     analysis.Explanation
                 }
-            }, AuditJsonOptions),
-            Guid.NewGuid().ToString("N"),
+            },
             now,
             discrepancyCase.ReportedByUserId,
-            discrepancyCase.Id));
+            discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

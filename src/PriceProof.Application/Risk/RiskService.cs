@@ -150,10 +150,6 @@ internal sealed class RiskService : IRiskService
             .AsNoTracking()
             .Include(entity => entity.RiskSnapshots)
             .Where(entity => entity.CurrentRiskScore.HasValue)
-            .OrderByDescending(entity => entity.CurrentRiskScore ?? 0m)
-            .ThenByDescending(entity => entity.RiskUpdatedUtc)
-            .ThenBy(entity => entity.Name)
-            .Take(10)
             .ToListAsync(cancellationToken);
 
         var branches = await _dbContext.Branches
@@ -161,14 +157,15 @@ internal sealed class RiskService : IRiskService
             .Include(entity => entity.Merchant)
             .Include(entity => entity.RiskSnapshots)
             .Where(entity => entity.CurrentRiskScore.HasValue)
-            .OrderByDescending(entity => entity.CurrentRiskScore ?? 0m)
-            .ThenByDescending(entity => entity.RiskUpdatedUtc)
-            .ThenBy(entity => entity.Name)
-            .Take(10)
             .ToListAsync(cancellationToken);
 
         return new RiskOverviewDto(
-            merchants.Select(merchant =>
+            merchants
+                .OrderByDescending(entity => entity.CurrentRiskScore ?? 0m)
+                .ThenByDescending(entity => entity.RiskUpdatedUtc)
+                .ThenBy(entity => entity.Name)
+                .Take(10)
+                .Select(merchant =>
             {
                 var snapshot = merchant.RiskSnapshots
                     .OrderByDescending(item => item.CalculatedUtc)
@@ -185,7 +182,12 @@ internal sealed class RiskService : IRiskService
                     snapshot?.LikelyCardSurchargeCases ?? 0,
                     merchant.RiskUpdatedUtc);
             }).ToArray(),
-            branches.Select(branch =>
+            branches
+                .OrderByDescending(entity => entity.CurrentRiskScore ?? 0m)
+                .ThenByDescending(entity => entity.RiskUpdatedUtc)
+                .ThenBy(entity => entity.Name)
+                .Take(10)
+                .Select(branch =>
             {
                 var snapshot = branch.RiskSnapshots
                     .OrderByDescending(item => item.CalculatedUtc)

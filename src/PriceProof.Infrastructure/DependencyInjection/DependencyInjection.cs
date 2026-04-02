@@ -4,12 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PriceProof.Application.Abstractions.ComplaintPacks;
+using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Infrastructure.Auth;
 using PriceProof.Infrastructure.ComplaintPacks;
+using PriceProof.Infrastructure.Diagnostics;
 using PriceProof.Infrastructure.Ocr;
 using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
@@ -23,7 +25,9 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDataProtection();
+        services.AddHttpContextAccessor();
         services.AddSingleton<AuditingInterceptor>();
+        services.AddScoped<IRequestContextAccessor, HttpContextRequestContextAccessor>();
         services.Configure<ComplaintPackOptions>(configuration.GetSection(ComplaintPackOptions.SectionName));
         services.Configure<FileUploadOptions>(configuration.GetSection(FileUploadOptions.SectionName));
         services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));

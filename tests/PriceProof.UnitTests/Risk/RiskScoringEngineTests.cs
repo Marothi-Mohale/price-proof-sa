@@ -94,6 +94,23 @@ public sealed class RiskScoringEngineTests
         result.UnclearCaseRatio.Should().Be(0.5000m);
     }
 
+    [Fact]
+    public void Should_cap_score_at_one_hundred_for_extreme_repeat_signals()
+    {
+        var result = _engine.Calculate(
+            Enumerable.Range(0, 12)
+                .Select(index => CreateSignal(
+                    DiscrepancyAnalysisClassification.LikelyCardSurcharge,
+                    250m,
+                    1.00m,
+                    _now.AddDays(-Math.Min(index + 1, 25))))
+                .ToArray(),
+            _now);
+
+        result.Score.Should().Be(100m);
+        result.Label.Should().Be(RiskLabel.Severe);
+    }
+
     private RiskCaseSignal CreateSignal(
         DiscrepancyAnalysisClassification classification,
         decimal differenceAmount,

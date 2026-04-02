@@ -28,6 +28,7 @@ src/frontend/.swc/
 .env
 .env.local
 .env.*.local
+src/PriceProof.Api/appsettings.Local*.json
 
 # Storage
 storage/
