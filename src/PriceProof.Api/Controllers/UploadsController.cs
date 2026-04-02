@@ -8,6 +8,7 @@ using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Application.Uploads;
+using PriceProof.Infrastructure.Persistence;
 
 namespace PriceProof.Api.Controllers;
 
@@ -60,8 +61,7 @@ public sealed class UploadsController : ControllerBase
         [FromServices] IFileUploadService fileUploadService,
         CancellationToken cancellationToken)
     {
-        var caseId = ExtractCaseIdFromStoragePath(path);
-        await RequireAccessibleCaseAsync(caseId, dbContext, currentUserContext, cancellationToken);
+        await RequireAccessiblePathAsync(path, dbContext, currentUserContext, cancellationToken);
         var result = await fileUploadService.DownloadAsync(path, cancellationToken);
         return File(result.Content, result.ContentType, enableRangeProcessing: true);
     }
@@ -92,20 +92,54 @@ public sealed class UploadsController : ControllerBase
         return caseId.Value;
     }
 
-    private static Guid? ExtractCaseIdFromStoragePath(string storagePath)
+    private static async Task RequireAccessiblePathAsync(
+        string storagePath,
+        IApplicationDbContext dbContext,
+        ICurrentUserContext currentUserContext,
+        CancellationToken cancellationToken)
     {
-        var normalizedPath = storagePath
-            .Replace('\\', '/')
-            .Trim();
-
-        var segments = normalizedPath
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (segments.Length < 4 || !segments[0].Equals("uploads", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(storagePath))
         {
-            return null;
+            throw new NotFoundException("The requested file could not be found.");
         }
 
-        return Guid.TryParse(segments[2], out var caseId) ? caseId : null;
+        var caseOwnerUserId = await dbContext.PriceCaptures
+            .AsNoTracking()
+            .Where(entity => entity.EvidenceStoragePath == storagePath)
+            .Select(entity => entity.Case!.ReportedByUserId)
+            .Cast<Guid?>()
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? await dbContext.ReceiptRecords
+                .AsNoTracking()
+                .Where(entity => entity.StoragePath == storagePath)
+                .Select(entity => entity.Case!.ReportedByUserId)
+                .Cast<Guid?>()
+                .FirstOrDefaultAsync(cancellationToken);
+
+        if ((!caseOwnerUserId.HasValue || caseOwnerUserId.Value == Guid.Empty) && dbContext is AppDbContext appDbContext)
+        {
+            var uploadedBlobCaseId = await appDbContext.StoredBinaryObjects
+                .AsNoTracking()
+                .Where(entity => entity.StorageKey == storagePath)
+                .Select(entity => entity.CaseId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (uploadedBlobCaseId.HasValue && uploadedBlobCaseId.Value != Guid.Empty)
+            {
+                caseOwnerUserId = await dbContext.DiscrepancyCases
+                    .AsNoTracking()
+                    .Where(entity => entity.Id == uploadedBlobCaseId.Value)
+                    .Select(entity => entity.ReportedByUserId)
+                    .Cast<Guid?>()
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+        }
+
+        if (!caseOwnerUserId.HasValue || caseOwnerUserId.Value == Guid.Empty)
+        {
+            throw new NotFoundException("The requested file could not be found.");
+        }
+
+        CurrentUserGuards.EnsureCanAccessCase(currentUserContext, caseOwnerUserId.Value);
     }
 }

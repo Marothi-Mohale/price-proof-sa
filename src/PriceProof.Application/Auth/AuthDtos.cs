@@ -6,11 +6,17 @@ public sealed record AuthSessionDto(
     string DisplayName,
     bool IsActive,
     bool IsAdmin,
-    DateTimeOffset SignedInAtUtc);
+    bool IsEmailVerified,
+    bool RequiresEmailVerification,
+    string? Message,
+    DateTimeOffset? SignedInAtUtc);
 
 public sealed record CurrentUserDto(
     Guid Id,
     string Email,
     string DisplayName,
     bool IsActive,
-    bool IsAdmin);
+    bool IsAdmin,
+    bool IsEmailVerified);
+
+public sealed record AuthActionResultDto(string Message);

@@ -43,7 +43,10 @@ export type AuthSession = {
   displayName: string;
   isActive: boolean;
   isAdmin: boolean;
-  signedInAtUtc: string;
+  isEmailVerified: boolean;
+  requiresEmailVerification: boolean;
+  message?: string | null;
+  signedInAtUtc?: string | null;
 };
 
 export type CurrentUser = {
@@ -52,6 +55,11 @@ export type CurrentUser = {
   displayName: string;
   isActive: boolean;
   isAdmin: boolean;
+  isEmailVerified: boolean;
+};
+
+export type AuthActionResult = {
+  message: string;
 };
 
 export type LookupBranch = {
@@ -526,6 +534,29 @@ export type SignUpRequest = {
   email: string;
   displayName: string;
   password: string;
+};
+
+export type RequestEmailVerificationRequest = {
+  email: string;
+};
+
+export type ConfirmEmailVerificationRequest = {
+  email: string;
+  token: string;
+};
+
+export type RequestPasswordResetRequest = {
+  email: string;
+};
+
+export type ConfirmPasswordResetRequest = {
+  email: string;
+  token: string;
+  newPassword: string;
+};
+
+export type AccountRecoveryRequest = {
+  email: string;
 };
 
 export type GetCasesQuery = {

@@ -26,6 +26,30 @@ public sealed class User : SoftDeletableEntity
 
     public int? PasswordIterations { get; private set; }
 
+    public bool IsEmailVerified { get; private set; }
+
+    public DateTimeOffset? EmailVerifiedUtc { get; private set; }
+
+    public string? EmailVerificationTokenHash { get; private set; }
+
+    public DateTimeOffset? EmailVerificationTokenExpiresUtc { get; private set; }
+
+    public DateTimeOffset? EmailVerificationSentUtc { get; private set; }
+
+    public string? PasswordResetTokenHash { get; private set; }
+
+    public DateTimeOffset? PasswordResetTokenExpiresUtc { get; private set; }
+
+    public DateTimeOffset? PasswordResetSentUtc { get; private set; }
+
+    public int FailedSignInCount { get; private set; }
+
+    public DateTimeOffset? LastFailedSignInUtc { get; private set; }
+
+    public DateTimeOffset? LockoutEndsUtc { get; private set; }
+
+    public DateTimeOffset? LastPasswordChangedUtc { get; private set; }
+
     public DateTimeOffset? LastSignedInUtc { get; private set; }
 
     public bool IsActive { get; private set; }
@@ -61,12 +85,71 @@ public sealed class User : SoftDeletableEntity
         PasswordHash = passwordHash.Trim();
         PasswordSalt = passwordSalt.Trim();
         PasswordIterations = passwordIterations;
+        PasswordResetTokenHash = null;
+        PasswordResetTokenExpiresUtc = null;
+        PasswordResetSentUtc = null;
+        LastPasswordChangedUtc = now;
         UpdatedUtc = now;
     }
 
     public void RecordSignIn(DateTimeOffset now)
     {
         LastSignedInUtc = now;
+        FailedSignInCount = 0;
+        LastFailedSignInUtc = null;
+        LockoutEndsUtc = null;
+        UpdatedUtc = now;
+    }
+
+    public void RecordFailedSignIn(DateTimeOffset now, int maxAttempts, TimeSpan lockoutDuration)
+    {
+        FailedSignInCount = Math.Max(0, FailedSignInCount) + 1;
+        LastFailedSignInUtc = now;
+
+        if (FailedSignInCount >= maxAttempts)
+        {
+            LockoutEndsUtc = now.Add(lockoutDuration);
+        }
+
+        UpdatedUtc = now;
+    }
+
+    public void ClearLockout(DateTimeOffset now)
+    {
+        FailedSignInCount = 0;
+        LastFailedSignInUtc = null;
+        LockoutEndsUtc = null;
+        UpdatedUtc = now;
+    }
+
+    public bool IsLockedOutAt(DateTimeOffset now)
+    {
+        return LockoutEndsUtc.HasValue && LockoutEndsUtc.Value > now;
+    }
+
+    public void IssueEmailVerification(string tokenHash, DateTimeOffset expiresUtc, DateTimeOffset now)
+    {
+        EmailVerificationTokenHash = tokenHash.Trim();
+        EmailVerificationTokenExpiresUtc = expiresUtc;
+        EmailVerificationSentUtc = now;
+        UpdatedUtc = now;
+    }
+
+    public void MarkEmailVerified(DateTimeOffset now)
+    {
+        IsEmailVerified = true;
+        EmailVerifiedUtc = now;
+        EmailVerificationTokenHash = null;
+        EmailVerificationTokenExpiresUtc = null;
+        EmailVerificationSentUtc = null;
+        UpdatedUtc = now;
+    }
+
+    public void IssuePasswordReset(string tokenHash, DateTimeOffset expiresUtc, DateTimeOffset now)
+    {
+        PasswordResetTokenHash = tokenHash.Trim();
+        PasswordResetTokenExpiresUtc = expiresUtc;
+        PasswordResetSentUtc = now;
         UpdatedUtc = now;
     }
 

@@ -1,19 +1,22 @@
-using System.IO;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PriceProof.Application.Abstractions.Communication;
 using PriceProof.Application.Abstractions.ComplaintPacks;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Auth;
 using PriceProof.Domain.Entities;
 using PriceProof.Infrastructure.Auth;
+using PriceProof.Infrastructure.Communication;
 using PriceProof.Infrastructure.ComplaintPacks;
 using PriceProof.Infrastructure.Diagnostics;
 using PriceProof.Infrastructure.Ocr;
@@ -21,6 +24,7 @@ using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
 using PriceProof.Infrastructure.Persistence.Interceptors;
 using PriceProof.Infrastructure.Seeding;
+using PriceProof.Infrastructure.Storage;
 using PriceProof.Infrastructure.Uploads;
 
 namespace PriceProof.Infrastructure.DependencyInjection;
@@ -29,21 +33,21 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var dataProtectionPath = Path.Combine(Directory.GetCurrentDirectory(), ".appdata", "dataprotection");
-        Directory.CreateDirectory(dataProtectionPath);
-
         services.AddDataProtection()
-            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
             .SetApplicationName("PriceProof.Api");
         services.AddHttpContextAccessor();
         services.AddSingleton<AuditingInterceptor>();
         services.AddScoped<IRequestContextAccessor, HttpContextRequestContextAccessor>();
         services.AddScoped<ICurrentUserContext, HttpContextCurrentUserContext>();
         services.AddSingleton<IPasswordHashingService, Pbkdf2PasswordHashingService>();
+        services.AddSingleton<IAccountTokenService, AccountTokenService>();
         services.Configure<BootstrapAdminOptions>(configuration.GetSection(BootstrapAdminOptions.SectionName));
+        services.Configure<AccountSecurityOptions>(configuration.GetSection(AccountSecurityOptions.SectionName));
         services.Configure<ComplaintPackOptions>(configuration.GetSection(ComplaintPackOptions.SectionName));
+        services.Configure<EmailDeliveryOptions>(configuration.GetSection(EmailDeliveryOptions.SectionName));
         services.Configure<FileUploadOptions>(configuration.GetSection(FileUploadOptions.SectionName));
         services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
+        services.Configure<SharedStorageOptions>(configuration.GetSection(SharedStorageOptions.SectionName));
         services.Configure<SessionAuthOptions>(configuration.GetSection(SessionAuthOptions.SectionName));
 
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
@@ -55,8 +59,21 @@ public static class DependencyInjection
             options.AddInterceptors(serviceProvider.GetRequiredService<AuditingInterceptor>());
         });
 
+        services.AddSingleton<DatabaseXmlRepository>();
+        services.AddOptions<KeyManagementOptions>()
+            .Configure<DatabaseXmlRepository>((options, repository) => options.XmlRepository = repository);
+
         services.AddScoped<IApplicationDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
         services.AddSingleton<ISessionTokenService, SessionTokenService>();
+        services.AddScoped<IAccountWorkflowUrlBuilder, AccountWorkflowUrlBuilder>();
+        services.AddScoped<IEmailDeliveryService>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<EmailDeliveryOptions>>().Value;
+            return string.Equals(options.Provider, "Smtp", StringComparison.OrdinalIgnoreCase)
+                ? ActivatorUtilities.CreateInstance<SmtpEmailDeliveryService>(serviceProvider)
+                : ActivatorUtilities.CreateInstance<LoggingEmailDeliveryService>(serviceProvider);
+        });
+        services.AddScoped<DatabaseBinaryObjectStore>();
         services.AddSingleton<ReceiptOcrTextParser>();
         services.AddScoped<IComplaintPackGenerator, QuestPdfComplaintPackGenerator>();
         services.AddScoped<IComplaintPackDocumentStore, FileSystemComplaintPackDocumentStore>();
@@ -133,6 +150,18 @@ public static class DependencyInjection
                                         ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordSalt" character varying(128);
                                         ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordIterations" integer;
                                         ALTER TABLE users ADD COLUMN IF NOT EXISTS "LastSignedInUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "IsEmailVerified" boolean NOT NULL DEFAULT true;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "EmailVerifiedUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "EmailVerificationTokenHash" character varying(128);
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "EmailVerificationTokenExpiresUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "EmailVerificationSentUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordResetTokenHash" character varying(128);
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordResetTokenExpiresUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordResetSentUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "FailedSignInCount" integer NOT NULL DEFAULT 0;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "LastFailedSignInUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "LockoutEndsUtc" timestamp with time zone;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "LastPasswordChangedUtc" timestamp with time zone;
 
                                         ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisClassification" integer;
                                         ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisConfidence" numeric(5,4);
@@ -205,8 +234,40 @@ public static class DependencyInjection
                                         CREATE INDEX IF NOT EXISTS "IX_branch_risk_snapshots_BranchId_CalculatedUtc"
                                             ON branch_risk_snapshots ("BranchId", "CalculatedUtc");
 
+                                        CREATE TABLE IF NOT EXISTS stored_binary_objects (
+                                            "Id" uuid NOT NULL,
+                                            "Bucket" character varying(64) NOT NULL,
+                                            "StorageKey" character varying(500) NOT NULL,
+                                            "FileName" character varying(260) NOT NULL,
+                                            "ContentType" character varying(120) NOT NULL,
+                                            "ContentHash" character varying(128) NOT NULL,
+                                            "SizeBytes" bigint NOT NULL,
+                                            "Content" bytea NOT NULL,
+                                            "CaseId" uuid NULL,
+                                            "CreatedUtc" timestamp with time zone NOT NULL,
+                                            "UpdatedUtc" timestamp with time zone NOT NULL,
+                                            CONSTRAINT "PK_stored_binary_objects" PRIMARY KEY ("Id")
+                                        );
+
+                                        CREATE UNIQUE INDEX IF NOT EXISTS "IX_stored_binary_objects_StorageKey"
+                                            ON stored_binary_objects ("StorageKey");
+                                        CREATE INDEX IF NOT EXISTS "IX_stored_binary_objects_Bucket_CaseId_CreatedUtc"
+                                            ON stored_binary_objects ("Bucket", "CaseId", "CreatedUtc");
+
+                                        CREATE TABLE IF NOT EXISTS data_protection_keys (
+                                            "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                                            "FriendlyName" character varying(256) NOT NULL,
+                                            "Xml" text NOT NULL,
+                                            "CreatedUtc" timestamp with time zone NOT NULL,
+                                            "UpdatedUtc" timestamp with time zone NOT NULL
+                                        );
+
+                                        CREATE UNIQUE INDEX IF NOT EXISTS "IX_data_protection_keys_FriendlyName"
+                                            ON data_protection_keys ("FriendlyName");
+
                                         UPDATE users
-                                        SET "IsAdmin" = true
+                                        SET "IsAdmin" = true,
+                                            "IsEmailVerified" = true
                                         WHERE "Id" = '11111111-1111-1111-1111-111111111111';
                                         """;
 
@@ -254,6 +315,8 @@ public static class DependencyInjection
             {
                 existingAdmin = User.Create(options.DisplayName.Trim(), options.Email.Trim(), isAdmin: true);
                 existingAdmin.SetPassword(passwordHash.PasswordHash, passwordHash.PasswordSalt, passwordHash.PasswordIterations, now);
+                existingAdmin.MarkEmailVerified(now);
+                existingAdmin.ClearLockout(now);
                 dbContext.Users.Add(existingAdmin);
                 logger?.LogInformation("Created bootstrap admin account for {Email}.", options.Email.Trim());
             }
@@ -263,6 +326,8 @@ public static class DependencyInjection
                 existingAdmin.PromoteToAdmin(now);
                 existingAdmin.Reactivate(now);
                 existingAdmin.SetPassword(passwordHash.PasswordHash, passwordHash.PasswordSalt, passwordHash.PasswordIterations, now);
+                existingAdmin.MarkEmailVerified(now);
+                existingAdmin.ClearLockout(now);
                 logger?.LogInformation("Updated bootstrap admin account for {Email}.", options.Email.Trim());
             }
 
@@ -298,6 +363,45 @@ public static class DependencyInjection
         if (allowedOrigins.Any(origin => origin.Contains("localhost", StringComparison.OrdinalIgnoreCase) || origin.Contains("127.0.0.1")))
         {
             throw new InvalidOperationException("Production CORS origins cannot point to localhost.");
+        }
+
+        if (allowedOrigins.Length == 0)
+        {
+            throw new InvalidOperationException("At least one production CORS origin must be configured.");
+        }
+
+        var publicAppUrl = configuration[$"{AccountSecurityOptions.SectionName}:PublicAppUrl"];
+        if (string.IsNullOrWhiteSpace(publicAppUrl))
+        {
+            throw new InvalidOperationException("A public application URL must be configured for production account verification and recovery links.");
+        }
+
+        var emailProvider = configuration[$"{EmailDeliveryOptions.SectionName}:Provider"] ?? "LogOnly";
+        var fromAddress = configuration[$"{EmailDeliveryOptions.SectionName}:FromAddress"];
+        if (string.IsNullOrWhiteSpace(fromAddress))
+        {
+            throw new InvalidOperationException("A sender address must be configured for production account email delivery.");
+        }
+
+        if (string.Equals(emailProvider, "LogOnly", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Production account email delivery cannot use the log-only provider.");
+        }
+
+        if (string.Equals(emailProvider, "Smtp", StringComparison.OrdinalIgnoreCase))
+        {
+            var smtpHost = configuration[$"{EmailDeliveryOptions.SectionName}:Smtp:Host"];
+            if (string.IsNullOrWhiteSpace(smtpHost))
+            {
+                throw new InvalidOperationException("SMTP email delivery is enabled but the SMTP host is missing.");
+            }
+        }
+
+        var otlpEnabled = configuration.GetValue<bool>("OpenTelemetry:Enabled");
+        var otlpEndpoint = configuration["OpenTelemetry:OtlpEndpoint"];
+        if (otlpEnabled && string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            throw new InvalidOperationException("OpenTelemetry export is enabled but no OTLP endpoint is configured.");
         }
 
         var ocrEnabled = configuration.GetValue<bool>("Ocr:Enabled");

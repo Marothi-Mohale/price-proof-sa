@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Security;
+using PriceProof.Application.Auth;
 using PriceProof.Infrastructure.Options;
 
 namespace PriceProof.Infrastructure.Auth;
@@ -14,6 +15,7 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     public const string SchemeName = "PriceProofSession";
 
     private readonly IApplicationDbContext _dbContext;
+    private readonly AccountSecurityOptions _accountSecurityOptions;
     private readonly ISessionTokenService _sessionTokenService;
     private readonly SessionAuthOptions _sessionAuthOptions;
 
@@ -23,12 +25,14 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
         UrlEncoder encoder,
         IApplicationDbContext dbContext,
         ISessionTokenService sessionTokenService,
-        IOptions<SessionAuthOptions> sessionAuthOptions)
+        IOptions<SessionAuthOptions> sessionAuthOptions,
+        IOptions<AccountSecurityOptions> accountSecurityOptions)
         : base(options, logger, encoder)
     {
         _dbContext = dbContext;
         _sessionTokenService = sessionTokenService;
         _sessionAuthOptions = sessionAuthOptions.Value;
+        _accountSecurityOptions = accountSecurityOptions.Value;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -54,6 +58,11 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
         if (user is null || !user.IsActive)
         {
             return AuthenticateResult.Fail("The session is no longer valid.");
+        }
+
+        if (_accountSecurityOptions.RequireVerifiedEmailForSignIn && !user.IsEmailVerified)
+        {
+            return AuthenticateResult.Fail("The session requires a verified email address.");
         }
 
         var claims = new List<Claim>

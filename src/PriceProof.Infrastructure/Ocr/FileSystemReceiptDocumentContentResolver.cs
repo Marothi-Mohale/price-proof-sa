@@ -8,11 +8,13 @@ namespace PriceProof.Infrastructure.Ocr;
 
 public sealed class FileSystemReceiptDocumentContentResolver : IReceiptDocumentContentResolver
 {
-    private readonly OcrOptions _options;
+    private readonly DatabaseBinaryObjectStore _binaryObjectStore;
 
-    public FileSystemReceiptDocumentContentResolver(IOptions<OcrOptions> options)
+    public FileSystemReceiptDocumentContentResolver(
+        IOptions<OcrOptions> _,
+        DatabaseBinaryObjectStore binaryObjectStore)
     {
-        _options = options.Value;
+        _binaryObjectStore = binaryObjectStore;
     }
 
     public async Task<OcrDocumentContent> ResolveAsync(
@@ -21,40 +23,12 @@ public sealed class FileSystemReceiptDocumentContentResolver : IReceiptDocumentC
         string storagePath,
         CancellationToken cancellationToken = default)
     {
-        var resolvedPath = ResolvePath(storagePath);
-
-        if (!File.Exists(resolvedPath))
-        {
-            throw new ConflictException("The stored receipt file could not be accessed for OCR.");
-        }
-
         try
         {
-            var content = await File.ReadAllBytesAsync(resolvedPath, cancellationToken);
-            return new OcrDocumentContent(fileName, contentType, content);
+            var file = await _binaryObjectStore.DownloadAsync(storagePath, cancellationToken);
+            return new OcrDocumentContent(fileName, string.IsNullOrWhiteSpace(contentType) ? file.ContentType : contentType, file.Content);
         }
-        catch (IOException)
-        {
-            throw new ConflictException("The stored receipt file could not be accessed for OCR.");
-        }
-        catch (UnauthorizedAccessException)
-        {
-            throw new ConflictException("The stored receipt file could not be accessed for OCR.");
-        }
-    }
-
-    private string ResolvePath(string storagePath)
-    {
-        if (string.IsNullOrWhiteSpace(storagePath))
-        {
-            throw new ConflictException("The stored receipt file could not be accessed for OCR.");
-        }
-
-        try
-        {
-            return FileStoragePathResolver.Resolve(storagePath, _options.StorageRootPath);
-        }
-        catch (InvalidOperationException)
+        catch (NotFoundException)
         {
             throw new ConflictException("The stored receipt file could not be accessed for OCR.");
         }

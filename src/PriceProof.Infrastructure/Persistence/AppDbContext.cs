@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Domain.Entities;
+using PriceProof.Infrastructure.Persistence.Entities;
 using PriceProof.Infrastructure.Seeding;
 
 namespace PriceProof.Infrastructure.Persistence;
@@ -34,6 +35,10 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
 
     public DbSet<BranchRiskSnapshot> BranchRiskSnapshots => Set<BranchRiskSnapshot>();
 
+    public DbSet<StoredBinaryObject> StoredBinaryObjects => Set<StoredBinaryObject>();
+
+    public DbSet<DataProtectionKeyRecord> DataProtectionKeyRecords => Set<DataProtectionKeyRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -49,6 +54,8 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
         ConfigureAuditLogs(modelBuilder);
         ConfigureMerchantRiskSnapshots(modelBuilder);
         ConfigureBranchRiskSnapshots(modelBuilder);
+        ConfigureStoredBinaryObjects(modelBuilder);
+        ConfigureDataProtectionKeys(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -63,6 +70,18 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.PasswordHash).HasMaxLength(256);
             builder.Property(entity => entity.PasswordSalt).HasMaxLength(128);
             builder.Property(entity => entity.PasswordIterations);
+            builder.Property(entity => entity.IsEmailVerified).IsRequired();
+            builder.Property(entity => entity.EmailVerifiedUtc);
+            builder.Property(entity => entity.EmailVerificationTokenHash).HasMaxLength(128);
+            builder.Property(entity => entity.EmailVerificationTokenExpiresUtc);
+            builder.Property(entity => entity.EmailVerificationSentUtc);
+            builder.Property(entity => entity.PasswordResetTokenHash).HasMaxLength(128);
+            builder.Property(entity => entity.PasswordResetTokenExpiresUtc);
+            builder.Property(entity => entity.PasswordResetSentUtc);
+            builder.Property(entity => entity.FailedSignInCount).IsRequired();
+            builder.Property(entity => entity.LastFailedSignInUtc);
+            builder.Property(entity => entity.LockoutEndsUtc);
+            builder.Property(entity => entity.LastPasswordChangedUtc);
             builder.Property(entity => entity.LastSignedInUtc);
             builder.HasIndex(entity => entity.NormalizedEmail).IsUnique();
             builder.Property(entity => entity.IsAdmin).IsRequired();
@@ -80,6 +99,18 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     PasswordHash = (string?)null,
                     PasswordSalt = (string?)null,
                     PasswordIterations = (int?)null,
+                    IsEmailVerified = true,
+                    EmailVerifiedUtc = SeedData.SeedTimestamp,
+                    EmailVerificationTokenHash = (string?)null,
+                    EmailVerificationTokenExpiresUtc = (DateTimeOffset?)null,
+                    EmailVerificationSentUtc = (DateTimeOffset?)null,
+                    PasswordResetTokenHash = (string?)null,
+                    PasswordResetTokenExpiresUtc = (DateTimeOffset?)null,
+                    PasswordResetSentUtc = (DateTimeOffset?)null,
+                    FailedSignInCount = 0,
+                    LastFailedSignInUtc = (DateTimeOffset?)null,
+                    LockoutEndsUtc = (DateTimeOffset?)null,
+                    LastPasswordChangedUtc = (DateTimeOffset?)null,
                     LastSignedInUtc = (DateTimeOffset?)null,
                     IsActive = true,
                     IsAdmin = true,
@@ -97,6 +128,18 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     PasswordHash = (string?)null,
                     PasswordSalt = (string?)null,
                     PasswordIterations = (int?)null,
+                    IsEmailVerified = true,
+                    EmailVerifiedUtc = SeedData.SeedTimestamp,
+                    EmailVerificationTokenHash = (string?)null,
+                    EmailVerificationTokenExpiresUtc = (DateTimeOffset?)null,
+                    EmailVerificationSentUtc = (DateTimeOffset?)null,
+                    PasswordResetTokenHash = (string?)null,
+                    PasswordResetTokenExpiresUtc = (DateTimeOffset?)null,
+                    PasswordResetSentUtc = (DateTimeOffset?)null,
+                    FailedSignInCount = 0,
+                    LastFailedSignInUtc = (DateTimeOffset?)null,
+                    LockoutEndsUtc = (DateTimeOffset?)null,
+                    LastPasswordChangedUtc = (DateTimeOffset?)null,
                     LastSignedInUtc = (DateTimeOffset?)null,
                     IsActive = true,
                     IsAdmin = false,
@@ -496,6 +539,40 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                 .WithMany(entity => entity.RiskSnapshots)
                 .HasForeignKey(entity => entity.BranchId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureStoredBinaryObjects(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<StoredBinaryObject>(builder =>
+        {
+            builder.ToTable("stored_binary_objects");
+            builder.HasKey(entity => entity.Id);
+            builder.Property(entity => entity.Bucket).HasMaxLength(64).IsRequired();
+            builder.Property(entity => entity.StorageKey).HasMaxLength(500).IsRequired();
+            builder.Property(entity => entity.FileName).HasMaxLength(260).IsRequired();
+            builder.Property(entity => entity.ContentType).HasMaxLength(120).IsRequired();
+            builder.Property(entity => entity.ContentHash).HasMaxLength(128).IsRequired();
+            builder.Property(entity => entity.SizeBytes).IsRequired();
+            builder.Property(entity => entity.Content).HasColumnType("bytea").IsRequired();
+            builder.Property(entity => entity.CreatedUtc).IsRequired();
+            builder.Property(entity => entity.UpdatedUtc).IsRequired();
+            builder.HasIndex(entity => entity.StorageKey).IsUnique();
+            builder.HasIndex(entity => new { entity.Bucket, entity.CaseId, entity.CreatedUtc });
+        });
+    }
+
+    private static void ConfigureDataProtectionKeys(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DataProtectionKeyRecord>(builder =>
+        {
+            builder.ToTable("data_protection_keys");
+            builder.HasKey(entity => entity.Id);
+            builder.Property(entity => entity.FriendlyName).HasMaxLength(256).IsRequired();
+            builder.Property(entity => entity.Xml).HasColumnType("text").IsRequired();
+            builder.Property(entity => entity.CreatedUtc).IsRequired();
+            builder.Property(entity => entity.UpdatedUtc).IsRequired();
+            builder.HasIndex(entity => entity.FriendlyName).IsUnique();
         });
     }
 }

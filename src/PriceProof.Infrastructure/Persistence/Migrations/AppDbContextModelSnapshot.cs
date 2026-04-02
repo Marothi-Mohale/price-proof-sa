@@ -831,6 +831,22 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)");
 
+                    b.Property<DateTimeOffset?>("EmailVerificationSentUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("EmailVerificationTokenExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailVerificationTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("EmailVerifiedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FailedSignInCount")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -840,7 +856,19 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastFailedSignInUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastPasswordChangedUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("LastSignedInUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LockoutEndsUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("NormalizedEmail")
@@ -854,6 +882,16 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("PasswordIterations")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("PasswordResetSentUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PasswordResetTokenExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PasswordResetTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("PasswordSalt")
                         .HasMaxLength(128)
@@ -876,9 +914,12 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
                             CreatedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
                             DisplayName = "PriceProof Admin",
                             Email = "admin@priceproof.local",
+                            EmailVerifiedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            FailedSignInCount = 0,
                             IsActive = true,
                             IsAdmin = true,
                             IsDeleted = false,
+                            IsEmailVerified = true,
                             NormalizedEmail = "ADMIN@PRICEPROOF.LOCAL",
                             UpdatedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
@@ -888,12 +929,103 @@ namespace PriceProof.Infrastructure.Persistence.Migrations
                             CreatedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
                             DisplayName = "Demo Investigator",
                             Email = "investigator@priceproof.local",
+                            EmailVerifiedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            FailedSignInCount = 0,
                             IsActive = true,
                             IsAdmin = false,
                             IsDeleted = false,
+                            IsEmailVerified = true,
                             NormalizedEmail = "INVESTIGATOR@PRICEPROOF.LOCAL",
                             UpdatedUtc = new DateTimeOffset(new DateTime(2025, 1, 15, 8, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
+                });
+
+            modelBuilder.Entity("PriceProof.Infrastructure.Persistence.Entities.DataProtectionKeyRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FriendlyName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Xml")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FriendlyName")
+                        .IsUnique();
+
+                    b.ToTable("data_protection_keys", (string)null);
+                });
+
+            modelBuilder.Entity("PriceProof.Infrastructure.Persistence.Entities.StoredBinaryObject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Bucket")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("CaseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StorageKey")
+                        .IsUnique();
+
+                    b.HasIndex("Bucket", "CaseId", "CreatedUtc");
+
+                    b.ToTable("stored_binary_objects", (string)null);
                 });
 
             modelBuilder.Entity("PriceProof.Domain.Entities.AuditLog", b =>

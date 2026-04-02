@@ -13,7 +13,7 @@ The current implementation includes:
 - OCR orchestration with provider abstraction and fallback
 - complaint-pack PDF generation
 - merchant and branch risk scoring
-- admin reporting, audit logging, request correlation, and rate limiting
+- admin reporting, audit logging, request correlation, rate limiting, and production auth hardening
 
 ## The South African Problem
 
@@ -36,11 +36,14 @@ PriceProof SA is built around that operational reality: capture evidence early, 
 - Conservative discrepancy analysis with explanation text and confidence scoring
 - Complaint-pack generation as both PDF and structured JSON
 - Merchant and branch risk scoring with historical snapshots
+- Email verification, password reset, account recovery, and lockout handling
+- Shared database-backed binary storage for uploads and complaint packs
+- Database-backed ASP.NET Data Protection key storage for multi-instance deployments
 - Admin dashboard for case volume, OCR success, complaint-pack generation, and risky entities
 - Audit logging for important user actions
 - Request correlation IDs for traceability
 - File upload validation, sanitization, and size limits
-- Health checks, Serilog structured logging, and API rate limiting
+- Health checks, Serilog structured logging, API rate limiting, OpenTelemetry hooks, and deployment runbooks
 
 ## Architecture Diagram
 
@@ -54,10 +57,11 @@ flowchart LR
     A --> I[Infrastructure Layer]
 
     I --> DB[(PostgreSQL)]
-    I --> FS[File Storage]
+    I --> BIN[(Shared Binary Storage)]
     I --> OCR1[Azure Document Intelligence]
     I --> OCR2[Google Vision]
     I --> PDF[QuestPDF Generator]
+    I --> KEYS[(Data Protection Keys)]
 
     AP --> AUD[Audit Logging]
     AP --> RISK[Risk Scoring]
@@ -66,6 +70,7 @@ flowchart LR
     A --> ADMIN[Admin Reporting]
     A --> HC[Health Checks]
     A --> RL[Rate Limiting]
+    A --> OTEL[OpenTelemetry]
 ```
 
 ## Solution Structure
@@ -80,7 +85,7 @@ flowchart LR
   Entities, enums, and domain services for discrepancy analysis, complaint narratives, and risk scoring.
 
 - `src/PriceProof.Infrastructure`  
-  EF Core persistence, PostgreSQL integration, OCR providers, PDF generation, file storage, and session token handling.
+  EF Core persistence, PostgreSQL integration, OCR providers, PDF generation, shared binary storage, and session token handling.
 
 - `tests/PriceProof.UnitTests`  
   Unit tests for core logic such as discrepancy detection, risk scoring, and OCR normalization.
@@ -120,6 +125,9 @@ flowchart LR
 - Request correlation IDs
 - Rate limiting
 - Structured audit logging
+- OpenTelemetry tracing and metrics
+- CI/CD workflow files
+- Backup and restore runbooks
 
 ## Setup
 
@@ -128,7 +136,7 @@ flowchart LR
 - Node.js 20+
 - PostgreSQL 16+ or Docker Desktop
 
-### Option 1: Docker for API and database
+### Option 1: Docker for the full stack
 
 From the repository root:
 
@@ -139,19 +147,14 @@ docker compose up --build
 This starts:
 - PostgreSQL on `5432`
 - the API on `8080`
+- the frontend on `3000`
 
-Run the frontend separately for local UI development:
-
-```powershell
-Set-Location .\src\frontend
-npm.cmd install
-npm.cmd run dev
-```
+For containerized environments, mount an untracked secret config file under `infra/secrets/` before starting the stack.
 
 ### Option 2: Run services locally
 
 1. Start PostgreSQL locally.
-2. Keep machine-specific settings in a local ignored override file under `src/PriceProof.Api`.
+2. Keep machine-specific settings in an ignored override file such as `appsettings.Local.json` or `appsettings.Secrets.json` under `src/PriceProof.Api`.
 3. Run the API:
 
 ```powershell
@@ -171,20 +174,16 @@ npm.cmd run dev
 - API: `http://localhost:8080`
 - Health check: `http://localhost:8080/health`
 
-## Environment Variables
+## Secure Configuration
 
-This repository intentionally avoids publishing secret-bearing environment-variable values in source control.
+This repository intentionally keeps secret-bearing runtime values out of source control.
 
-Practical local guidance:
-- Frontend local development does not require committed `.env` files.
-- API local development can run with the default local configuration or an ignored `appsettings.Local.json` override file.
-- If your hosting platform prefers environment variables, map them to the equivalent ASP.NET Core configuration keys at deployment time rather than committing values to the repo.
+Recommended approaches:
+- local development: use an ignored `appsettings.Local.json` or `appsettings.Secrets.json`
+- containerized deployment: mount a secret JSON file to `/run/secrets/priceproof.api.json`
+- hosted deployment: map secure platform secrets to the equivalent ASP.NET Core configuration keys
 
-Safe non-secret runtime variables commonly used during local development:
-- `ASPNETCORE_ENVIRONMENT=Development`
-- `NEXT_TELEMETRY_DISABLED=1` (optional)
-
-Secret values for items like database credentials or OCR provider keys should remain local and untracked.
+Do not commit database credentials, OCR provider keys, SMTP credentials, bootstrap-admin passwords, or production callback URLs into the repository.
 
 ## Screenshot Placeholders
 
@@ -206,7 +205,13 @@ Add actual screenshots under `docs/screenshots/` when presenting the project pub
 ### Auth
 - `POST /auth/sign-up`
 - `POST /auth/sign-in`
-- `GET /auth/me/{userId}`
+- `POST /auth/email-verification/request`
+- `POST /auth/email-verification/confirm`
+- `POST /auth/password-reset/request`
+- `POST /auth/password-reset/confirm`
+- `POST /auth/account-recovery`
+- `POST /auth/sign-out`
+- `GET /auth/me`
 
 ### Lookups
 - `GET /lookups/bootstrap`
@@ -268,15 +273,25 @@ npm.cmd run build
 npm.cmd test -- --runInBand
 ```
 
+## Production Operations
+
+- OpenTelemetry collector config: `infra/monitoring/otel-collector-config.yaml`
+- Prometheus scrape config: `infra/monitoring/prometheus.yml`
+- Alert rules: `infra/monitoring/alerts/priceproof-alerts.yml`
+- Backup and restore scripts: `infra/scripts/backup-postgres.ps1`, `infra/scripts/restore-postgres.ps1`, `infra/scripts/backup-postgres.sh`, and `infra/scripts/restore-postgres.sh`
+- Runbooks: `docs/runbooks/backup-and-restore.md`, `docs/runbooks/monitoring-and-alerting.md`, and `docs/runbooks/production-deployment.md`
+- CI workflow: `.github/workflows/ci.yml`
+- Production deployment workflow: `.github/workflows/deploy-production.yml`
+
 ## Roadmap
 
-- Add stronger authentication and role management beyond the current lightweight session flow
+- Add MFA or passwordless second-factor support for high-trust accounts
 - Introduce a proper evidence-retention policy and configurable data lifecycle
 - Expand complaint-pack export targets beyond PDF and JSON
 - Add richer OCR quality scoring and document quality hints before upload
 - Add explicit dismissed/resolved workflows for analysts and admins
 - Improve trend analysis and anomaly detection for merchant risk scoring
-- Add production-ready cloud storage and background job execution options
+- Add cloud object-storage and background job providers alongside the current shared database-backed deployment option
 
 ## Legal Disclaimer
 

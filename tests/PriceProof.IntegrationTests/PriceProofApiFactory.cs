@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Communication;
+using PriceProof.Application.Auth;
 using PriceProof.Infrastructure.Options;
 using PriceProof.Infrastructure.Persistence;
 using PriceProof.Infrastructure.Persistence.Interceptors;
@@ -22,9 +24,13 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
 
     private SqliteConnection? _connection;
     private string? _storageRootPath;
+    private FakeEmailDeliveryService? _fakeEmailDeliveryService;
 
     public string StorageRootPath => _storageRootPath
         ?? throw new InvalidOperationException("The test storage path has not been initialized.");
+
+    public FakeEmailDeliveryService EmailDeliveryService => _fakeEmailDeliveryService
+        ?? throw new InvalidOperationException("The fake email delivery service has not been initialized.");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -42,11 +48,14 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
             services.RemoveAll<AuditingInterceptor>();
             services.RemoveAll<IOcrProvider>();
             services.RemoveAll<IReceiptDocumentContentResolver>();
+            services.RemoveAll<IEmailDeliveryService>();
 
             _connection = new SqliteConnection("Data Source=:memory:");
             _connection.Open();
+            _fakeEmailDeliveryService = new FakeEmailDeliveryService();
 
             services.AddSingleton(_connection);
+            services.AddSingleton(_fakeEmailDeliveryService);
             services.AddSingleton<AuditingInterceptor>();
             services.AddDbContext<AppDbContext>((serviceProvider, options) =>
             {
@@ -56,6 +65,7 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
             services.AddScoped<IApplicationDbContext>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
             services.AddScoped<IOcrProvider, FakeOcrProvider>();
             services.AddScoped<IReceiptDocumentContentResolver, FakeReceiptDocumentContentResolver>();
+            services.AddSingleton<IEmailDeliveryService>(serviceProvider => serviceProvider.GetRequiredService<FakeEmailDeliveryService>());
             services.PostConfigure<OcrOptions>(options =>
             {
                 options.Enabled = true;
@@ -64,14 +74,21 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.RequestTimeoutSeconds = 5;
                 options.RetryCount = 0;
                 options.ProviderRetryCount = 0;
-                options.StorageRootPath = _storageRootPath!;
             });
             services.PostConfigure<ComplaintPackOptions>(options =>
             {
                 options.Enabled = true;
-                options.StorageRootPath = _storageRootPath!;
                 options.IncludeEvidencePreviews = true;
                 options.IncludeEvidenceReferences = true;
+            });
+            services.PostConfigure<AccountSecurityOptions>(options =>
+            {
+                options.PublicAppUrl = "http://localhost:3000";
+                options.RequireVerifiedEmailForSignIn = true;
+                options.EmailVerificationTokenLifetimeHours = 4;
+                options.PasswordResetTokenLifetimeMinutes = 30;
+                options.MaxFailedSignInAttempts = 3;
+                options.LockoutDurationMinutes = 5;
             });
             services.PostConfigure<BootstrapAdminOptions>(options =>
             {
@@ -81,8 +98,12 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
             });
             services.PostConfigure<FileUploadOptions>(options =>
             {
-                options.StorageRootPath = _storageRootPath!;
                 options.MaxFileSizeBytes = 1 * 1024 * 1024;
+            });
+            services.PostConfigure<SharedStorageOptions>(options =>
+            {
+                options.EnableLegacyFileFallback = false;
+                options.LegacyFileRootPath = _storageRootPath!;
             });
         });
     }

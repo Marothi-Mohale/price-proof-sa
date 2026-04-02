@@ -7,15 +7,21 @@ import { useSession } from "@/components/providers/session-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldShell, TextInput } from "@/components/ui/field";
+import { api } from "@/lib/api";
 import { flattenZodErrors, signInSchema, signUpSchema } from "@/lib/validators";
 
 export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
   const router = useRouter();
-  const { authBusy, authError, currentUser, session, signIn, signUp } = useSession();
+  const { authBusy, authError, authNotice, clearAuthNotice, currentUser, session, signIn, signUp } = useSession();
   const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
+  const [supportMode, setSupportMode] = useState<"resendVerification" | "forgotPassword" | "recoverAccount" | null>(null);
   const [signInValues, setSignInValues] = useState({ email: "", password: "" });
   const [signUpValues, setSignUpValues] = useState({ displayName: "", email: "", password: "", confirmPassword: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [supportEmail, setSupportEmail] = useState("");
+  const [supportBusy, setSupportBusy] = useState(false);
+  const [supportMessage, setSupportMessage] = useState<string | null>(null);
+  const [supportError, setSupportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (session && currentUser) {
@@ -35,8 +41,10 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
     setErrors({});
 
     try {
-      await signIn(parsed.data);
-      router.replace(nextDestination ?? "/dashboard");
+      const result = await signIn(parsed.data);
+      if (result.signedInAtUtc) {
+        router.replace(nextDestination ?? "/dashboard");
+      }
     } catch {
     }
   }
@@ -53,13 +61,44 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
     setErrors({});
 
     try {
-      await signUp({
+      const result = await signUp({
         displayName: parsed.data.displayName,
         email: parsed.data.email,
         password: parsed.data.password
       });
-      router.replace(nextDestination ?? "/dashboard");
+      if (result.signedInAtUtc) {
+        router.replace(nextDestination ?? "/dashboard");
+      }
     } catch {
+    }
+  }
+
+  async function handleSupportAction(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!supportMode || !supportEmail.trim()) {
+      setSupportError("Enter the email address tied to the account.");
+      return;
+    }
+
+    setSupportBusy(true);
+    setSupportError(null);
+    setSupportMessage(null);
+    clearAuthNotice();
+
+    try {
+      const normalizedEmail = supportEmail.trim();
+      const result = supportMode === "resendVerification"
+        ? await api.requestEmailVerification({ email: normalizedEmail })
+        : supportMode === "forgotPassword"
+          ? await api.requestPasswordReset({ email: normalizedEmail })
+          : await api.recoverAccount({ email: normalizedEmail });
+
+      setSupportMessage(result.message);
+    } catch (error) {
+      setSupportError(error instanceof Error ? error.message : "Unable to complete this request.");
+    } finally {
+      setSupportBusy(false);
     }
   }
 
@@ -87,6 +126,7 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
               onClick={() => {
                 setMode("signIn");
                 setErrors({});
+                clearAuthNotice();
               }}
               className={`flex-1 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 mode === "signIn" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600"
@@ -99,6 +139,7 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
               onClick={() => {
                 setMode("signUp");
                 setErrors({});
+                clearAuthNotice();
               }}
               className={`flex-1 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 mode === "signUp" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600"
@@ -110,6 +151,9 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
 
           {authError ? (
             <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{authError}</div>
+          ) : null}
+          {authNotice ? (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{authNotice}</div>
           ) : null}
 
           {mode === "signIn" ? (
@@ -137,6 +181,44 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
               <Button type="submit" busy={authBusy} className="w-full">
                 Continue to dashboard
               </Button>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportMode("forgotPassword");
+                    setSupportEmail(signInValues.email);
+                    setSupportError(null);
+                    setSupportMessage(null);
+                  }}
+                  className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950"
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportMode("resendVerification");
+                    setSupportEmail(signInValues.email);
+                    setSupportError(null);
+                    setSupportMessage(null);
+                  }}
+                  className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950"
+                >
+                  Resend verification
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportMode("recoverAccount");
+                    setSupportEmail(signInValues.email);
+                    setSupportError(null);
+                    setSupportMessage(null);
+                  }}
+                  className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950"
+                >
+                  Recover account
+                </button>
+              </div>
             </form>
           ) : (
             <form className="space-y-4" onSubmit={handleSignUp}>
@@ -185,6 +267,61 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
               </Button>
             </form>
           )}
+
+          {supportMode ? (
+            <Card className="border border-slate-200 bg-slate-50">
+              <div className="space-y-3">
+                <CardTitle className="text-xl">
+                  {supportMode === "resendVerification"
+                    ? "Resend verification email"
+                    : supportMode === "forgotPassword"
+                      ? "Reset password"
+                      : "Recover account"}
+                </CardTitle>
+                <CardDescription>
+                  {supportMode === "resendVerification"
+                    ? "We’ll send a fresh email verification link if the account exists."
+                    : supportMode === "forgotPassword"
+                      ? "We’ll send a password reset link if the account exists and is verified."
+                      : "We’ll send the safest next-step email for the account, without exposing whether it exists."}
+                </CardDescription>
+                {supportError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{supportError}</div>
+                ) : null}
+                {supportMessage ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{supportMessage}</div>
+                ) : null}
+                <form className="space-y-4" onSubmit={handleSupportAction}>
+                  <FieldShell htmlFor="support-email" label="Email address" required>
+                    <TextInput
+                      id="support-email"
+                      type="email"
+                      placeholder="name@example.com"
+                      autoComplete="email"
+                      value={supportEmail}
+                      onChange={(event) => setSupportEmail(event.target.value)}
+                    />
+                  </FieldShell>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="submit" busy={supportBusy}>
+                      Send email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setSupportMode(null);
+                        setSupportError(null);
+                        setSupportMessage(null);
+                      }}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            </Card>
+          ) : null}
         </Card>
       </div>
     </main>

@@ -1,0 +1,29 @@
+groups:
+  - name: priceproof-api
+    rules:
+      - alert: PriceProofApiDown
+        expr: up{job="otel-collector"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: PriceProof telemetry pipeline is down
+          description: The OpenTelemetry collector has not been reachable for more than two minutes.
+
+      - alert: PriceProofHighServerErrorRate
+        expr: sum(rate(http_server_request_duration_count{http_response_status_code=~"5.."}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: PriceProof server error rate is elevated
+          description: The API has sustained 5xx responses for at least ten minutes.
+
+      - alert: PriceProofHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_server_request_duration_bucket[10m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: PriceProof request latency is elevated
+          description: The 95th percentile API request duration has exceeded two seconds for at least ten minutes.

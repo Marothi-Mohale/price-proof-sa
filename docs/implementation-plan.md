@@ -29,7 +29,7 @@ PriceProof SA is a mobile-first consumer protection app for South African shoppe
   - `Api`: HTTP endpoints, filters, middleware, auth wiring, rate limiting.
   - `Application`: use cases, validators, orchestration, DTOs, background job requests.
   - `Domain`: aggregates, enums, value objects, domain services, core invariants.
-  - `Infrastructure`: EF Core, PostgreSQL mappings, file storage, OCR providers, PDF generation, background jobs, logging adapters.
+  - `Infrastructure`: EF Core, PostgreSQL mappings, shared binary storage, OCR providers, PDF generation, background jobs, logging adapters.
 - CQRS-lite with pragmatic services instead of ceremony-heavy mediator usage.
 - EF Core used directly where it simplifies reads; repositories only for write-heavy or polymorphic boundaries.
 
@@ -40,7 +40,7 @@ PriceProof SA is a mobile-first consumer protection app for South African shoppe
 
 ### Data and integrations
 - PostgreSQL for transactional data.
-- Azure Blob Storage abstraction with local filesystem fallback for development.
+- Shared database-backed binary storage for uploads, complaint packs, and multi-instance-safe evidence access.
 - Azure Document Intelligence primary OCR provider with Google Vision fallback and mock provider for local runs without cloud credentials.
 - Hangfire for background jobs and retryable OCR / complaint-pack workflows.
 

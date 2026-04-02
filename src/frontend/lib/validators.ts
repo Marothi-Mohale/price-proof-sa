@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const passwordRequirementMessage = "Use at least 12 characters with uppercase, lowercase, a number, and a symbol.";
 
-const strongPasswordSchema = z
+export const strongPasswordSchema = z
   .string()
   .min(12, passwordRequirementMessage)
   .max(256)
@@ -17,7 +17,7 @@ const strongPasswordSchema = z
 
 export const signInSchema = z.object({
   email: z.string().trim().email("Enter a valid email address.").max(320),
-  password: strongPasswordSchema
+  password: z.string().min(1, "Enter your password.").max(256)
 });
 
 export const signUpSchema = z.object({

@@ -27,7 +27,7 @@ public sealed class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await authService.SignUpAsync(request, cancellationToken);
-        WriteSessionCookie(result, sessionTokenService, sessionOptions.Value);
+        WriteSessionCookieIfPresent(result, sessionTokenService, sessionOptions.Value);
         return Ok(result);
     }
 
@@ -43,8 +43,79 @@ public sealed class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await authService.SignInAsync(request, cancellationToken);
-        WriteSessionCookie(result, sessionTokenService, sessionOptions.Value);
+        WriteSessionCookieIfPresent(result, sessionTokenService, sessionOptions.Value);
         return Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("email-verification/request")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(AuthActionResultDto), StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<AuthActionResultDto>> RequestEmailVerificationAsync(
+        [FromBody] RequestEmailVerificationRequest request,
+        [FromServices] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.RequestEmailVerificationAsync(request, cancellationToken);
+        return Accepted(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("email-verification/confirm")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(AuthSessionDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AuthSessionDto>> ConfirmEmailVerificationAsync(
+        [FromBody] ConfirmEmailVerificationRequest request,
+        [FromServices] IAuthService authService,
+        [FromServices] ISessionTokenService sessionTokenService,
+        [FromServices] IOptions<SessionAuthOptions> sessionOptions,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.ConfirmEmailVerificationAsync(request, cancellationToken);
+        WriteSessionCookieIfPresent(result, sessionTokenService, sessionOptions.Value);
+        return Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("password-reset/request")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(AuthActionResultDto), StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<AuthActionResultDto>> RequestPasswordResetAsync(
+        [FromBody] RequestPasswordResetRequest request,
+        [FromServices] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.RequestPasswordResetAsync(request, cancellationToken);
+        return Accepted(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("password-reset/confirm")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(AuthSessionDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AuthSessionDto>> ConfirmPasswordResetAsync(
+        [FromBody] ConfirmPasswordResetRequest request,
+        [FromServices] IAuthService authService,
+        [FromServices] ISessionTokenService sessionTokenService,
+        [FromServices] IOptions<SessionAuthOptions> sessionOptions,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.ConfirmPasswordResetAsync(request, cancellationToken);
+        WriteSessionCookieIfPresent(result, sessionTokenService, sessionOptions.Value);
+        return Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("account-recovery")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(AuthActionResultDto), StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<AuthActionResultDto>> RecoverAccountAsync(
+        [FromBody] AccountRecoveryRequest request,
+        [FromServices] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.RecoverAccountAsync(request, cancellationToken);
+        return Accepted(result);
     }
 
     [Authorize]
@@ -68,14 +139,19 @@ public sealed class AuthController : ControllerBase
         return Ok(result);
     }
 
-    private void WriteSessionCookie(
+    private void WriteSessionCookieIfPresent(
         AuthSessionDto session,
         ISessionTokenService sessionTokenService,
         SessionAuthOptions sessionOptions)
     {
-        var expiresAtUtc = session.SignedInAtUtc.AddHours(sessionOptions.SessionLifetimeHours);
+        if (!session.SignedInAtUtc.HasValue)
+        {
+            return;
+        }
+
+        var expiresAtUtc = session.SignedInAtUtc.Value.AddHours(sessionOptions.SessionLifetimeHours);
         var token = sessionTokenService.CreateToken(
-            new SessionTokenPayload(session.UserId, session.Email, session.IsAdmin, session.SignedInAtUtc),
+            new SessionTokenPayload(session.UserId, session.Email, session.IsAdmin, session.SignedInAtUtc.Value),
             expiresAtUtc);
 
         Response.Cookies.Append(sessionOptions.CookieName, token, BuildCookieOptions(sessionOptions, expiresAtUtc));

@@ -9,6 +9,13 @@ services:
       - "5432:5432"
     volumes:
       - priceproof-postgres-data:/var/lib/postgresql/data
+      - priceproof-postgres-backups:/backups
+    environment:
+      PRICEPROOF_DB_NAME: priceproof
+      PRICEPROOF_DB_USER: priceproof
+      PRICEPROOF_DB_PASSWORD_FILE: /run/secrets/priceproof_postgres_password
+    secrets:
+      - priceproof_postgres_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U priceproof -d priceproof"]
       interval: 10s
@@ -25,10 +32,32 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command:
-      - --ConnectionStrings:DefaultConnection=Host=postgres;Port=5432;Database=priceproof;Username=priceproof;Password=priceproof
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    secrets:
+      - source: priceproof_api_config
+        target: priceproof.api.json
     ports:
       - "8080:8080"
 
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    container_name: priceproof-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
 volumes:
   priceproof-postgres-data:
+  priceproof-postgres-backups:
+
+secrets:
+  priceproof_api_config:
+    file: ./infra/secrets/priceproof.api.json
+  priceproof_postgres_password:
+    file: ./infra/secrets/postgres-password.txt

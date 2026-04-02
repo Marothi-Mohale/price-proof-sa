@@ -1,4 +1,5 @@
 import type {
+  AccountRecoveryRequest,
   AdminBranchRiskRow,
   AdminDashboardFilter,
   AdminDashboardSummary,
@@ -6,12 +7,15 @@ import type {
   AdminMerchantRiskRow,
   AnalyzeCaseRequest,
   AuthSession,
+  AuthActionResult,
   BranchRisk,
   BootstrapLookups,
   CaseAnalysis,
   CaseClassification,
   CaseDetail,
   CaseSummary,
+  ConfirmEmailVerificationRequest,
+  ConfirmPasswordResetRequest,
   CreateCaseRequest,
   CreatePaymentRecordRequest,
   CreatePriceCaptureRequest,
@@ -27,6 +31,8 @@ import type {
   RecentUpload,
   RiskOverview,
   ReceiptSummary,
+  RequestEmailVerificationRequest,
+  RequestPasswordResetRequest,
   RunReceiptOcrResult,
   SignInRequest,
   SignUpRequest,
@@ -165,6 +171,36 @@ export const api = {
   },
   signUp(input: SignUpRequest) {
     return requestJson<AuthSession>("/auth/sign-up", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  requestEmailVerification(input: RequestEmailVerificationRequest) {
+    return requestJson<AuthActionResult>("/auth/email-verification/request", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  confirmEmailVerification(input: ConfirmEmailVerificationRequest) {
+    return requestJson<AuthSession>("/auth/email-verification/confirm", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  requestPasswordReset(input: RequestPasswordResetRequest) {
+    return requestJson<AuthActionResult>("/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  confirmPasswordReset(input: ConfirmPasswordResetRequest) {
+    return requestJson<AuthSession>("/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  recoverAccount(input: AccountRecoveryRequest) {
+    return requestJson<AuthActionResult>("/auth/account-recovery", {
       method: "POST",
       body: JSON.stringify(input)
     });

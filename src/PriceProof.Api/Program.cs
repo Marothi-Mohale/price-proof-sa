@@ -8,6 +8,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using PriceProof.Api.Options;
 using PriceProof.Api.Middleware;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application;
@@ -18,11 +22,21 @@ using Serilog;
 using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration
-    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
-    .AddJsonFile($"appsettings.Local.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+}
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
+builder.Configuration
+    .AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.Secrets.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddJsonFile("/run/secrets/priceproof.api.json", optional: true, reloadOnChange: false)
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.Local.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables(prefix: "PRICEPROOF_");
+
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var openTelemetryOptions = builder.Configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>() ?? new();
 
 builder.Host.UseSerilog((context, services, configuration) =>
 {
@@ -46,6 +60,7 @@ builder.Services
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCaseRequestValidator>();
+builder.Services.Configure<OpenTelemetryOptions>(builder.Configuration.GetSection(OpenTelemetryOptions.SectionName));
 builder.Services
     .AddAuthentication(SessionAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
@@ -69,8 +84,12 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
-        policy
-            .WithOrigins(allowedOrigins)
+        if (allowedOrigins.Length == 0)
+        {
+            return;
+        }
+
+        policy.WithOrigins(allowedOrigins)
             .AllowCredentials()
             .AllowAnyHeader()
             .AllowAnyMethod();
@@ -162,6 +181,37 @@ builder.Services.AddRateLimiter(options =>
         await httpContext.Response.WriteAsJsonAsync(details, cancellationToken);
     };
 });
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(
+        serviceName: openTelemetryOptions.ServiceName,
+        serviceVersion: openTelemetryOptions.ServiceVersion))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddEntityFrameworkCoreInstrumentation(options =>
+            {
+                options.SetDbStatementForText = true;
+            });
+
+        if (openTelemetryOptions.Enabled && !string.IsNullOrWhiteSpace(openTelemetryOptions.OtlpEndpoint))
+        {
+            tracing.AddOtlpExporter(options => options.Endpoint = new Uri(openTelemetryOptions.OtlpEndpoint));
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation();
+
+        if (openTelemetryOptions.Enabled && !string.IsNullOrWhiteSpace(openTelemetryOptions.OtlpEndpoint))
+        {
+            metrics.AddOtlpExporter(options => options.Endpoint = new Uri(openTelemetryOptions.OtlpEndpoint));
+        }
+    });
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -196,6 +246,8 @@ app.UseSerilogRequestLogging(options =>
 
 app.MapControllers();
 app.MapHealthChecks("/health").AllowAnonymous();
+app.MapHealthChecks("/health/live").AllowAnonymous();
+app.MapHealthChecks("/health/ready").AllowAnonymous();
 
 app.Run();
 

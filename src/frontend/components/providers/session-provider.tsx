@@ -12,11 +12,13 @@ type SessionContextValue = {
   initializing: boolean;
   authBusy: boolean;
   authError: string | null;
+  authNotice: string | null;
   signIn: (input: SignInRequest) => Promise<AuthSession>;
   signUp: (input: SignUpRequest) => Promise<AuthSession>;
   signOut: () => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   updatePreferences: (next: AppPreferences) => void;
+  clearAuthNotice: () => void;
 };
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -28,6 +30,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [initializing, setInitializing] = useState(true);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -36,10 +39,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const storedSession = readSession();
 
     setPreferences(storedPreferences);
-    setSession(storedSession);
+    setSession(storedSession?.signedInAtUtc ? storedSession : null);
     setHydrated(true);
 
-    if (!storedSession) {
+    if (!storedSession?.signedInAtUtc) {
       setInitializing(false);
       return () => {
         isCancelled = true;
@@ -90,13 +93,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   async function completeAuth(action: Promise<AuthSession>) {
     setAuthBusy(true);
     setAuthError(null);
+    setAuthNotice(null);
 
     try {
       const nextSession = await action;
-      const nextUser = await api.getCurrentUser();
+      setAuthNotice(nextSession.message ?? null);
 
-      setSession(nextSession);
-      setCurrentUser(nextUser);
+      if (nextSession.signedInAtUtc) {
+        const nextUser = await api.getCurrentUser();
+        setSession(nextSession);
+        setCurrentUser(nextUser);
+      } else {
+        setSession(null);
+        setCurrentUser(null);
+      }
 
       return nextSession;
     } catch (error) {
@@ -125,6 +135,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setCurrentUser(null);
       setAuthError(null);
+      setAuthNotice(null);
     }
   }
 
@@ -141,11 +152,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         initializing,
         authBusy,
         authError,
+        authNotice,
         signIn: (input) => completeAuth(api.signIn(input)),
         signUp: (input) => completeAuth(api.signUp(input)),
         signOut,
         refreshCurrentUser,
-        updatePreferences
+        updatePreferences,
+        clearAuthNotice: () => setAuthNotice(null)
       }}
     >
       {children}

@@ -14,7 +14,7 @@ internal sealed class SessionTokenService : ISessionTokenService
     public SessionTokenService(IDataProtectionProvider dataProtectionProvider)
     {
         _protector = dataProtectionProvider
-            .CreateProtector("PriceProof.AdminSessionToken")
+            .CreateProtector("PriceProof.SessionToken")
             .ToTimeLimitedDataProtector();
     }
 

@@ -29,10 +29,13 @@ src/frontend/.swc/
 .env.local
 .env.*.local
 src/PriceProof.Api/appsettings.Local*.json
+src/PriceProof.Api/appsettings.Secrets*.json
+infra/secrets/
 
 # Storage
 storage/
 uploads/
+backups/
 
 # Docker
 postgres-data/

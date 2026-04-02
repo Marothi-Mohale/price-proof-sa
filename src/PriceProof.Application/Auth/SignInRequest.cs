@@ -1,5 +1,4 @@
 using FluentValidation;
-using PriceProof.Application.Common;
 
 namespace PriceProof.Application.Auth;
 
@@ -16,8 +15,6 @@ public sealed class SignInRequestValidator : AbstractValidator<SignInRequest>
 
         RuleFor(request => request.Password)
             .NotEmpty()
-            .MaximumLength(256)
-            .Must(SecurityPasswordRules.IsStrongPassword)
-            .WithMessage(SecurityPasswordRules.PasswordRequirementsMessage);
+            .MaximumLength(256);
     }
 }

@@ -455,7 +455,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
         return Uri.TryCreate(storagePath, UriKind.Absolute, out var uri) &&
                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
             ? storagePath
-            : null;
+            : $"/uploads/content?path={Uri.EscapeDataString(storagePath)}";
     }
 
     private static string BuildDownloadUrl(Guid complaintPackId) => $"/complaint-packs/{complaintPackId}/download";
