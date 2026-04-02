@@ -1,4 +1,9 @@
 import type {
+  AdminBranchRiskRow,
+  AdminDashboardFilter,
+  AdminDashboardSummary,
+  AdminDashboardTableQuery,
+  AdminMerchantRiskRow,
   AnalyzeCaseRequest,
   AuthSession,
   BranchRisk,
@@ -19,6 +24,7 @@ import type {
   PagedResult,
   PaymentRecordSummary,
   PriceCaptureSummary,
+  RecentUpload,
   RiskOverview,
   ReceiptSummary,
   RunReceiptOcrResult,
@@ -46,6 +52,32 @@ export class ApiError extends Error {
   }
 }
 
+async function buildApiError(response: Response, fallbackMessage: string) {
+  let message = fallbackMessage;
+  let traceId: string | undefined;
+  let fieldErrors: Record<string, string[]> | undefined;
+
+  try {
+    const payload = (await response.json()) as {
+      title?: string;
+      detail?: string;
+      traceId?: string;
+      errors?: Record<string, string[]>;
+    };
+
+    message = payload.detail ?? payload.title ?? message;
+    traceId = payload.traceId;
+    fieldErrors = payload.errors;
+  } catch {
+  }
+
+  return new ApiError(message, response.status, traceId, fieldErrors);
+}
+
+function withAuthorization(accessToken?: string): Record<string, string> {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
 async function requestJson<T>(path: string, init: RequestInit = {}) {
   const response = await fetch(`${API_PREFIX}${path}`, {
     ...init,
@@ -58,25 +90,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}) {
   });
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}.`;
-    let traceId: string | undefined;
-    let fieldErrors: Record<string, string[]> | undefined;
-
-    try {
-      const payload = (await response.json()) as {
-        title?: string;
-        detail?: string;
-        traceId?: string;
-        errors?: Record<string, string[]>;
-      };
-
-      message = payload.detail ?? payload.title ?? message;
-      traceId = payload.traceId;
-      fieldErrors = payload.errors;
-    } catch {
-    }
-
-    throw new ApiError(message, response.status, traceId, fieldErrors);
+    throw await buildApiError(response, `Request failed with status ${response.status}.`);
   }
 
   if (response.status === 204) {
@@ -122,13 +136,14 @@ export function buildUploadContentUrl(storagePath: string) {
   return buildAbsoluteUrl(`/uploads/content?path=${encodeURIComponent(storagePath)}`);
 }
 
-async function downloadBinary(path: string, fallbackFileName: string) {
+async function downloadBinary(path: string, fallbackFileName: string, init: RequestInit = {}) {
   const response = await fetch(buildAbsoluteUrl(path), {
+    ...init,
     cache: "no-store"
   });
 
   if (!response.ok) {
-    throw new ApiError("Unable to download the requested document.", response.status);
+    throw await buildApiError(response, "Unable to download the requested document.");
   }
 
   const blob = await response.blob();
@@ -218,8 +233,35 @@ export const api = {
   getBranchRisk(branchId: string) {
     return requestJson<BranchRisk>(`/branches/${branchId}/risk`);
   },
-  getRiskOverview(requestedByUserId: string) {
-    return requestJson<RiskOverview>(withQuery("/risk/overview", { requestedByUserId }));
+  getRiskOverview(accessToken: string) {
+    return requestJson<RiskOverview>("/risk/overview", {
+      headers: withAuthorization(accessToken)
+    });
+  },
+  getAdminDashboardSummary(accessToken: string, query: AdminDashboardFilter) {
+    return requestJson<AdminDashboardSummary>(withQuery("/admin/dashboard/summary", query), {
+      headers: withAuthorization(accessToken)
+    });
+  },
+  getAdminTopMerchants(accessToken: string, query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<AdminMerchantRiskRow>>(withQuery("/admin/dashboard/merchants", query), {
+      headers: withAuthorization(accessToken)
+    });
+  },
+  getAdminTopBranches(accessToken: string, query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<AdminBranchRiskRow>>(withQuery("/admin/dashboard/branches", query), {
+      headers: withAuthorization(accessToken)
+    });
+  },
+  getAdminRecentUploads(accessToken: string, query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<RecentUpload>>(withQuery("/admin/dashboard/recent-uploads", query), {
+      headers: withAuthorization(accessToken)
+    });
+  },
+  downloadAdminDashboardCsv(accessToken: string, query: AdminDashboardFilter, fallbackFileName = "priceproof-admin-report.csv") {
+    return downloadBinary(withQuery("/admin/dashboard/export/csv", query), fallbackFileName, {
+      headers: withAuthorization(accessToken)
+    });
   },
   uploadFile(file: File, category: string, caseId?: string) {
     const formData = new FormData();

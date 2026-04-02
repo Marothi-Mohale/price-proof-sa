@@ -34,22 +34,22 @@ export function RiskOverviewScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = currentUser?.isAdmin ?? session?.isAdmin ?? false;
+  const accessToken = session?.accessToken ?? "";
 
   useEffect(() => {
-    if (!session || !isAdmin) {
+    if (!session || !isAdmin || !accessToken) {
       setLoading(false);
       return;
     }
 
     let isCancelled = false;
-    const requestedByUserId = session.userId;
 
     async function loadOverview() {
       setLoading(true);
       setError(null);
 
       try {
-        const result = await api.getRiskOverview(requestedByUserId);
+        const result = await api.getRiskOverview(accessToken);
 
         if (!isCancelled) {
           setOverview(result);
@@ -70,7 +70,7 @@ export function RiskOverviewScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [isAdmin, session]);
+  }, [accessToken, isAdmin, session]);
 
   if (!isAdmin) {
     return (

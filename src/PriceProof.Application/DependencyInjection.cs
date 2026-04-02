@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using PriceProof.Application.Auth;
+using PriceProof.Application.Admin;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Cases;
 using PriceProof.Application.ComplaintPacks;
 using PriceProof.Application.Lookups;
@@ -20,6 +22,8 @@ public static class DependencyInjection
         services.AddSingleton<IDiscrepancyDetectionEngine>(_ => new DiscrepancyDetectionEngine());
         services.AddSingleton<IRiskScoringEngine, RiskScoringEngine>();
         services.AddSingleton<IComplaintNarrativeComposer, ComplaintNarrativeComposer>();
+        services.AddScoped<IAdminAccessService, AdminAccessService>();
+        services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ICaseService, CaseService>();
         services.AddScoped<IComplaintPackService, ComplaintPackService>();

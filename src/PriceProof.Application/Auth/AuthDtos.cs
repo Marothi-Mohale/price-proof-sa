@@ -6,6 +6,7 @@ public sealed record AuthSessionDto(
     string DisplayName,
     bool IsActive,
     bool IsAdmin,
+    string AccessToken,
     DateTimeOffset SignedInAtUtc);
 
 public sealed record CurrentUserDto(

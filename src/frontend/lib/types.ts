@@ -43,6 +43,7 @@ export type AuthSession = {
   displayName: string;
   isActive: boolean;
   isAdmin: boolean;
+  accessToken: string;
   signedInAtUtc: string;
 };
 
@@ -318,6 +319,76 @@ export type RiskLeaderboardBranch = {
 export type RiskOverview = {
   topMerchants: RiskLeaderboardMerchant[];
   topBranches: RiskLeaderboardBranch[];
+};
+
+export type AdminDashboardFilter = {
+  fromDate?: string;
+  toDate?: string;
+  province?: string;
+  city?: string;
+};
+
+export type AdminDashboardTableQuery = AdminDashboardFilter & {
+  skip?: number;
+  take?: number;
+};
+
+export type ClassificationCount = {
+  classification: string;
+  count: number;
+};
+
+export type AdminMerchantRiskRow = {
+  merchantId: string;
+  merchantName: string;
+  category?: string | null;
+  riskScore: number;
+  riskLabel: RiskLabel | string;
+  totalCases: number;
+  analyzedCases: number;
+  likelyCardSurchargeCases: number;
+};
+
+export type AdminBranchRiskRow = {
+  branchId: string;
+  merchantId: string;
+  branchName: string;
+  merchantName: string;
+  city: string;
+  province: string;
+  riskScore: number;
+  riskLabel: RiskLabel | string;
+  totalCases: number;
+  analyzedCases: number;
+  likelyCardSurchargeCases: number;
+};
+
+export type RecentUpload = {
+  uploadKind: string;
+  caseId: string;
+  merchantId: string;
+  merchantName: string;
+  branchId?: string | null;
+  branchName?: string | null;
+  city?: string | null;
+  province?: string | null;
+  fileName: string;
+  evidenceType: string;
+  storagePath: string;
+  uploadedBy: string;
+  uploadedUtc: string;
+};
+
+export type AdminDashboardSummary = {
+  totalCases: number;
+  unresolvedCases: number;
+  complaintPackGenerationCount: number;
+  ocrSuccessRate: number;
+  ocrAttemptCount: number;
+  ocrSuccessCount: number;
+  casesByClassification: ClassificationCount[];
+  topMerchants: AdminMerchantRiskRow[];
+  topBranches: AdminBranchRiskRow[];
 };
 
 export type UploadedFile = {

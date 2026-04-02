@@ -53,6 +53,27 @@ export const preferencesSchema = z.object({
   autoAnalyzeCase: z.boolean()
 });
 
+export const adminDashboardFilterSchema = z
+  .object({
+    fromDate: z.string().optional(),
+    toDate: z.string().optional(),
+    province: z.string().trim().optional(),
+    city: z.string().trim().optional()
+  })
+  .refine(
+    (value) => {
+      if (!value.fromDate || !value.toDate) {
+        return true;
+      }
+
+      return value.fromDate <= value.toDate;
+    },
+    {
+      path: ["toDate"],
+      message: "The end date must be on or after the start date."
+    }
+  );
+
 export function validatePositiveMoney(value: string, fieldLabel: string) {
   const trimmed = value.trim();
 

@@ -11,5 +11,5 @@ public interface IRiskService
 
     Task<BranchRiskDto> GetBranchRiskAsync(Guid branchId, CancellationToken cancellationToken);
 
-    Task<RiskOverviewDto> GetOverviewAsync(Guid requestedByUserId, CancellationToken cancellationToken);
+    Task<RiskOverviewDto> GetOverviewAsync(CancellationToken cancellationToken);
 }

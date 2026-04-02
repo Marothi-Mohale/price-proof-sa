@@ -11,11 +11,12 @@ public sealed class RiskController : ControllerBase
     [HttpGet("overview")]
     [ProducesResponseType(typeof(RiskOverviewDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<RiskOverviewDto>> GetOverviewAsync(
-        [FromQuery] Guid requestedByUserId,
+        [FromServices] IAdminAccessService adminAccessService,
         [FromServices] IRiskService riskService,
         CancellationToken cancellationToken)
     {
-        var result = await riskService.GetOverviewAsync(requestedByUserId, cancellationToken);
+        await adminAccessService.RequireAdminAsync(Request.Headers.Authorization, cancellationToken);
+        var result = await riskService.GetOverviewAsync(cancellationToken);
         return Ok(result);
     }
 }

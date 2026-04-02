@@ -1,5 +1,5 @@
-import { RiskOverviewScreen } from "@/components/admin/risk-overview-screen";
+import { redirect } from "next/navigation";
 
 export default function AdminRiskPage() {
-  return <RiskOverviewScreen />;
+  redirect("/admin");
 }

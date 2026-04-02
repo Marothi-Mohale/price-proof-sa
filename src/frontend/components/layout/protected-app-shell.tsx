@@ -21,7 +21,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const { currentUser, initializing, session, signOut } = useSession();
   const isAdmin = currentUser?.isAdmin ?? session?.isAdmin ?? false;
   const navigationItems = isAdmin
-    ? [...baseNavigationItems, { href: "/admin/risk", label: "Risk Desk" }]
+    ? [...baseNavigationItems, { href: "/admin", label: "Admin" }]
     : baseNavigationItems;
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="fixed bottom-4 left-4 right-4 z-40 rounded-[28px] border border-white/70 bg-white/95 p-3 shadow-[0_18px_45px_rgba(15,23,42,0.18)] backdrop-blur lg:hidden">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${navigationItems.length}, minmax(0, 1fr))` }}>
           {navigationItems.map((item) => {
             const isActive = pathname?.startsWith(item.href);
 

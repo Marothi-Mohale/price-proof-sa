@@ -144,22 +144,8 @@ internal sealed class RiskService : IRiskService
                 .ToArray());
     }
 
-    public async Task<RiskOverviewDto> GetOverviewAsync(Guid requestedByUserId, CancellationToken cancellationToken)
+    public async Task<RiskOverviewDto> GetOverviewAsync(CancellationToken cancellationToken)
     {
-        var user = await _dbContext.Users
-            .AsNoTracking()
-            .SingleOrDefaultAsync(entity => entity.Id == requestedByUserId, cancellationToken);
-
-        if (user is null)
-        {
-            throw new NotFoundException($"User '{requestedByUserId}' was not found.");
-        }
-
-        if (!user.IsAdmin)
-        {
-            throw new ForbiddenException("Only admin users can view the risk overview.");
-        }
-
         var merchants = await _dbContext.Merchants
             .AsNoTracking()
             .Include(entity => entity.RiskSnapshots)

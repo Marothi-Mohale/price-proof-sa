@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Entities;
@@ -9,10 +10,12 @@ namespace PriceProof.Application.Auth;
 internal sealed class AuthService : IAuthService
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly ISessionTokenService _sessionTokenService;
 
-    public AuthService(IApplicationDbContext dbContext)
+    public AuthService(IApplicationDbContext dbContext, ISessionTokenService sessionTokenService)
     {
         _dbContext = dbContext;
+        _sessionTokenService = sessionTokenService;
     }
 
     public async Task<AuthSessionDto> SignUpAsync(SignUpRequest request, CancellationToken cancellationToken)
@@ -71,7 +74,7 @@ internal sealed class AuthService : IAuthService
         return new CurrentUserDto(user.Id, user.Email, user.DisplayName, user.IsActive, user.IsAdmin);
     }
 
-    private static AuthSessionDto MapSession(User user)
+    private AuthSessionDto MapSession(User user)
     {
         return new AuthSessionDto(
             user.Id,
@@ -79,6 +82,9 @@ internal sealed class AuthService : IAuthService
             user.DisplayName,
             user.IsActive,
             user.IsAdmin,
+            _sessionTokenService.CreateToken(
+                new SessionTokenPayload(user.Id, user.Email, user.IsAdmin, DateTimeOffset.UtcNow),
+                DateTimeOffset.UtcNow.AddHours(12)),
             DateTimeOffset.UtcNow);
     }
 }
