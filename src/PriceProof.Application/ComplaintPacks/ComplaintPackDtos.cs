@@ -46,6 +46,22 @@ public sealed record ComplaintPackEvidenceItemDto(
     decimal? Amount,
     string? Notes);
 
+public sealed record ComplaintPackSubmissionRouteDto(
+    int Order,
+    string Channel,
+    string Recipient,
+    string Reason,
+    string WhenToUse);
+
+public sealed record ComplaintPackEmailTemplateDto(
+    string Subject,
+    string Body);
+
+public sealed record ComplaintPackSubmissionGuidanceDto(
+    IReadOnlyCollection<ComplaintPackSubmissionRouteDto> RecommendedRoutes,
+    string SafeUseNote,
+    ComplaintPackEmailTemplateDto EmailTemplate);
+
 public sealed record ComplaintPackJsonSummaryDto(
     Guid CaseId,
     string CaseReferenceNumber,
@@ -55,6 +71,7 @@ public sealed record ComplaintPackJsonSummaryDto(
     ComplaintPackEvidenceAssessmentDto EvidenceAssessment,
     IReadOnlyCollection<ComplaintPackTimelineItemDto> Timeline,
     IReadOnlyCollection<ComplaintPackEvidenceItemDto> EvidenceInventory,
+    ComplaintPackSubmissionGuidanceDto SubmissionGuidance,
     string ComplaintSummary,
     string DeclarationText,
     DateTimeOffset AuditTimestampUtc);

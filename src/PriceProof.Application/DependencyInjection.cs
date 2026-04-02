@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddSingleton<IDiscrepancyDetectionEngine>(_ => new DiscrepancyDetectionEngine());
         services.AddSingleton<IRiskScoringEngine, RiskScoringEngine>();
         services.AddSingleton<IComplaintNarrativeComposer, ComplaintNarrativeComposer>();
+        services.AddSingleton<IComplaintSubmissionGuidanceComposer, ComplaintSubmissionGuidanceComposer>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccessService, AdminAccessService>();
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();

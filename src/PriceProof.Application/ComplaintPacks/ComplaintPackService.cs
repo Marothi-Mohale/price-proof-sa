@@ -18,18 +18,21 @@ internal sealed class ComplaintPackService : IComplaintPackService
     private readonly IComplaintPackGenerator _complaintPackGenerator;
     private readonly IComplaintPackDocumentStore _documentStore;
     private readonly IComplaintNarrativeComposer _complaintNarrativeComposer;
+    private readonly IComplaintSubmissionGuidanceComposer _complaintSubmissionGuidanceComposer;
 
     public ComplaintPackService(
         IApplicationDbContext dbContext,
         IComplaintPackGenerator complaintPackGenerator,
         IComplaintPackDocumentStore documentStore,
         IComplaintNarrativeComposer complaintNarrativeComposer,
+        IComplaintSubmissionGuidanceComposer complaintSubmissionGuidanceComposer,
         IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
         _complaintPackGenerator = complaintPackGenerator;
         _documentStore = documentStore;
         _complaintNarrativeComposer = complaintNarrativeComposer;
+        _complaintSubmissionGuidanceComposer = complaintSubmissionGuidanceComposer;
         _auditLogWriter = auditLogWriter;
     }
 
@@ -66,6 +69,11 @@ internal sealed class ComplaintPackService : IComplaintPackService
         var explanation = BuildExplanation(discrepancyCase, differenceAmount, percentageDifference);
         var classification = discrepancyCase.AnalysisClassification?.ToString() ?? discrepancyCase.Classification.ToString();
         var classificationLabel = HumanizeLabel(classification);
+        var latestPaymentMethod = discrepancyCase.PaymentRecords
+            .OrderByDescending(record => record.PaidAtUtc)
+            .ThenByDescending(record => record.CreatedUtc)
+            .Select(record => record.PaymentMethod)
+            .FirstOrDefault();
 
         var evidenceInventory = BuildEvidenceInventory(discrepancyCase);
         var narrative = _complaintNarrativeComposer.Compose(new ComplaintNarrativeInput(
@@ -86,6 +94,18 @@ internal sealed class ComplaintPackService : IComplaintPackService
                                                          (record.ReceiptRecord!.ParsedTotalAmount.HasValue ||
                                                           !string.IsNullOrWhiteSpace(record.ReceiptRecord.RawText))),
             evidenceInventory.Count));
+        var submissionGuidance = _complaintSubmissionGuidanceComposer.Compose(new ComplaintSubmissionGuidanceInput(
+            discrepancyCase.CaseNumber,
+            discrepancyCase.Merchant.Name,
+            discrepancyCase.Branch?.Name,
+            discrepancyCase.IncidentAtUtc,
+            discrepancyCase.CurrencyCode,
+            quotedAmount,
+            chargedAmount,
+            differenceAmount,
+            classificationLabel,
+            narrative.EvidenceStrength,
+            latestPaymentMethod));
 
         var timeline = BuildTimeline(discrepancyCase, classificationLabel, now);
         var jsonSummary = BuildJsonSummaryDto(
@@ -100,6 +120,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
             explanation,
             timeline,
             evidenceInventory,
+            submissionGuidance,
             now);
 
         var document = await _complaintPackGenerator.GenerateAsync(
@@ -173,7 +194,8 @@ internal sealed class ComplaintPackService : IComplaintPackService
                 storedDocument.SizeBytes,
                 Classification = classification,
                 EvidenceStrength = narrative.EvidenceStrength.ToString(),
-                Summary = narrative.ComplaintSummary
+                Summary = narrative.ComplaintSummary,
+                RecommendedSubmissionChannels = submissionGuidance.RecommendedRoutes.Select(route => route.Channel).ToArray()
             },
             now,
             discrepancyCase.ReportedByUserId,
@@ -222,6 +244,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
         string explanation,
         IReadOnlyCollection<ComplaintPackTimelineItemDto> timeline,
         IReadOnlyCollection<ComplaintPackEvidenceItemDto> evidenceInventory,
+        ComplaintSubmissionGuidanceResult submissionGuidance,
         DateTimeOffset auditTimestampUtc)
     {
         return new ComplaintPackJsonSummaryDto(
@@ -254,6 +277,20 @@ internal sealed class ComplaintPackService : IComplaintPackService
                 narrative.EvidenceStrengthExplanation),
             timeline,
             evidenceInventory,
+            new ComplaintPackSubmissionGuidanceDto(
+                submissionGuidance.RecommendedRoutes
+                    .OrderBy(route => route.Order)
+                    .Select(route => new ComplaintPackSubmissionRouteDto(
+                        route.Order,
+                        route.Channel,
+                        route.Recipient,
+                        route.Reason,
+                        route.WhenToUse))
+                    .ToArray(),
+                submissionGuidance.SafeUseNote,
+                new ComplaintPackEmailTemplateDto(
+                    submissionGuidance.EmailTemplate.Subject,
+                    submissionGuidance.EmailTemplate.Body)),
             narrative.ComplaintSummary,
             narrative.DeclarationText,
             auditTimestampUtc);

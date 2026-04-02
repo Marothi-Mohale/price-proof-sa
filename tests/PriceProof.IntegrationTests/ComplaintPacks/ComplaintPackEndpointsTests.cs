@@ -107,6 +107,10 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
         generatedPack.JsonSummary.Analysis.ClassificationLabel.Should().Be("Likely Card Surcharge");
         generatedPack.JsonSummary.EvidenceAssessment.Strength.Should().Be("Strong");
         generatedPack.JsonSummary.EvidenceInventory.Should().HaveCount(2);
+        generatedPack.JsonSummary.SubmissionGuidance.RecommendedRoutes.Should().Contain(route => route.Channel.Contains("Merchant"));
+        generatedPack.JsonSummary.SubmissionGuidance.RecommendedRoutes.Should().Contain(route => route.Channel.Contains("Bank dispute team"));
+        generatedPack.JsonSummary.SubmissionGuidance.EmailTemplate.Subject.Should().Contain(createdCase.CaseNumber);
+        generatedPack.JsonSummary.SubmissionGuidance.EmailTemplate.Body.Should().Contain("Please find attached a complaint pack");
         generatedPack.Summary.Should().Contain("case reference");
 
         var downloadResponse = await _client.GetAsync(generatedPack.DownloadUrl);

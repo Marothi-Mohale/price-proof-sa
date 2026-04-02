@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { api, buildUploadContentUrl } from "@/lib/api";
 import { formatCurrency, formatDateTime, humanizeCode } from "@/lib/format";
-import type { CaseAnalysis, CaseDetail } from "@/lib/types";
+import type { CaseAnalysis, CaseDetail, GeneratedComplaintPack } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { ComplaintPackSubmissionGuide } from "@/components/complaint-packs/complaint-pack-submission-guide";
 import { CheckboxField, FieldShell, TextArea } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { ErrorState, LoadingState } from "@/components/ui/state";
@@ -15,6 +16,7 @@ import { ErrorState, LoadingState } from "@/components/ui/state";
 export function CaseDetailScreen({ caseId }: { caseId: string }) {
   const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null);
   const [analysis, setAnalysis] = useState<CaseAnalysis | null>(null);
+  const [generatedPack, setGeneratedPack] = useState<GeneratedComplaintPack | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +81,8 @@ export function CaseDetailScreen({ caseId }: { caseId: string }) {
     setError(null);
 
     try {
-      await api.generateComplaintPack(caseId);
+      const pack = await api.generateComplaintPack(caseId);
+      setGeneratedPack(pack);
       await refreshCase();
     } catch (packError) {
       setError(packError instanceof Error ? packError.message : "Unable to generate the complaint pack.");
@@ -206,6 +209,8 @@ export function CaseDetailScreen({ caseId }: { caseId: string }) {
           ))}
         </div>
       </Card>
+
+      {generatedPack ? <ComplaintPackSubmissionGuide guidance={generatedPack.jsonSummary.submissionGuidance} /> : null}
 
       <Card className="space-y-4">
         <CardTitle>Audit timeline</CardTitle>

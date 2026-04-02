@@ -24,6 +24,7 @@ import {
   validatePositiveMoney
 } from "@/lib/validators";
 import { SelectedFilePreview } from "@/components/evidence/file-preview";
+import { ComplaintPackSubmissionGuide } from "@/components/complaint-packs/complaint-pack-submission-guide";
 import { useSession } from "@/components/providers/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -639,6 +640,7 @@ export function NewCaseWizard() {
           </div>
           {!canAnalyze ? <CardDescription>Complaint pack generation is blocked until both quoted and charged amounts are available.</CardDescription> : null}
           {generatedPack ? <Card className="space-y-3 border-slate-200"><Badge tone="info">{generatedPack.fileName}</Badge><p className="text-sm leading-6 text-slate-700">{generatedPack.summary}</p><p className="text-sm text-slate-600">Evidence strength: {generatedPack.jsonSummary.evidenceAssessment.strength}</p></Card> : null}
+          {generatedPack ? <ComplaintPackSubmissionGuide guidance={generatedPack.jsonSummary.submissionGuidance} /> : null}
         </Card>
       ) : null}
 

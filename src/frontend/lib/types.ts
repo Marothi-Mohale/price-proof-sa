@@ -478,6 +478,25 @@ export type ComplaintPackEvidenceItem = {
   notes?: string | null;
 };
 
+export type ComplaintPackSubmissionRoute = {
+  order: number;
+  channel: string;
+  recipient: string;
+  reason: string;
+  whenToUse: string;
+};
+
+export type ComplaintPackEmailTemplate = {
+  subject: string;
+  body: string;
+};
+
+export type ComplaintPackSubmissionGuidance = {
+  recommendedRoutes: ComplaintPackSubmissionRoute[];
+  safeUseNote: string;
+  emailTemplate: ComplaintPackEmailTemplate;
+};
+
 export type ComplaintPackJsonSummary = {
   caseId: string;
   caseReferenceNumber: string;
@@ -487,6 +506,7 @@ export type ComplaintPackJsonSummary = {
   evidenceAssessment: ComplaintPackEvidenceAssessment;
   timeline: ComplaintPackTimelineItem[];
   evidenceInventory: ComplaintPackEvidenceItem[];
+  submissionGuidance: ComplaintPackSubmissionGuidance;
   complaintSummary: string;
   declarationText: string;
   auditTimestampUtc: string;
