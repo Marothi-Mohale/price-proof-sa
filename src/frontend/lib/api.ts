@@ -33,7 +33,6 @@ import type {
   UploadedFile
 } from "@/lib/types";
 
-const API_BASE_URL = "";
 const API_PREFIX = "/backend";
 
 type QueryValue = string | number | boolean | undefined | null;
@@ -74,10 +73,6 @@ async function buildApiError(response: Response, fallbackMessage: string) {
   return new ApiError(message, response.status, traceId, fieldErrors);
 }
 
-function withAuthorization(accessToken?: string): Record<string, string> {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-}
-
 async function requestJson<T>(path: string, init: RequestInit = {}) {
   const response = await fetch(`${API_PREFIX}${path}`, {
     ...init,
@@ -86,7 +81,8 @@ async function requestJson<T>(path: string, init: RequestInit = {}) {
       ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...init.headers
     },
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "same-origin"
   });
 
   if (!response.ok) {
@@ -139,7 +135,8 @@ export function buildUploadContentUrl(storagePath: string) {
 async function downloadBinary(path: string, fallbackFileName: string, init: RequestInit = {}) {
   const response = await fetch(buildAbsoluteUrl(path), {
     ...init,
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "same-origin"
   });
 
   if (!response.ok) {
@@ -172,8 +169,13 @@ export const api = {
       body: JSON.stringify(input)
     });
   },
-  getCurrentUser(userId: string) {
-    return requestJson<CurrentUser>(`/auth/me/${userId}`);
+  signOut() {
+    return requestJson<void>("/auth/sign-out", {
+      method: "POST"
+    });
+  },
+  getCurrentUser() {
+    return requestJson<CurrentUser>("/auth/me");
   },
   getBootstrapLookups() {
     return requestJson<BootstrapLookups>("/lookups/bootstrap");
@@ -233,35 +235,23 @@ export const api = {
   getBranchRisk(branchId: string) {
     return requestJson<BranchRisk>(`/branches/${branchId}/risk`);
   },
-  getRiskOverview(accessToken: string) {
-    return requestJson<RiskOverview>("/risk/overview", {
-      headers: withAuthorization(accessToken)
-    });
+  getRiskOverview() {
+    return requestJson<RiskOverview>("/risk/overview");
   },
-  getAdminDashboardSummary(accessToken: string, query: AdminDashboardFilter) {
-    return requestJson<AdminDashboardSummary>(withQuery("/admin/dashboard/summary", query), {
-      headers: withAuthorization(accessToken)
-    });
+  getAdminDashboardSummary(query: AdminDashboardFilter) {
+    return requestJson<AdminDashboardSummary>(withQuery("/admin/dashboard/summary", query));
   },
-  getAdminTopMerchants(accessToken: string, query: AdminDashboardTableQuery) {
-    return requestJson<PagedResult<AdminMerchantRiskRow>>(withQuery("/admin/dashboard/merchants", query), {
-      headers: withAuthorization(accessToken)
-    });
+  getAdminTopMerchants(query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<AdminMerchantRiskRow>>(withQuery("/admin/dashboard/merchants", query));
   },
-  getAdminTopBranches(accessToken: string, query: AdminDashboardTableQuery) {
-    return requestJson<PagedResult<AdminBranchRiskRow>>(withQuery("/admin/dashboard/branches", query), {
-      headers: withAuthorization(accessToken)
-    });
+  getAdminTopBranches(query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<AdminBranchRiskRow>>(withQuery("/admin/dashboard/branches", query));
   },
-  getAdminRecentUploads(accessToken: string, query: AdminDashboardTableQuery) {
-    return requestJson<PagedResult<RecentUpload>>(withQuery("/admin/dashboard/recent-uploads", query), {
-      headers: withAuthorization(accessToken)
-    });
+  getAdminRecentUploads(query: AdminDashboardTableQuery) {
+    return requestJson<PagedResult<RecentUpload>>(withQuery("/admin/dashboard/recent-uploads", query));
   },
-  downloadAdminDashboardCsv(accessToken: string, query: AdminDashboardFilter, fallbackFileName = "priceproof-admin-report.csv") {
-    return downloadBinary(withQuery("/admin/dashboard/export/csv", query), fallbackFileName, {
-      headers: withAuthorization(accessToken)
-    });
+  downloadAdminDashboardCsv(query: AdminDashboardFilter, fallbackFileName = "priceproof-admin-report.csv") {
+    return downloadBinary(withQuery("/admin/dashboard/export/csv", query), fallbackFileName);
   },
   uploadFile(file: File, category: string, caseId?: string) {
     const formData = new FormData();

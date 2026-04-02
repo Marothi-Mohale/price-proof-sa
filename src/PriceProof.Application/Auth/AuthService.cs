@@ -12,17 +12,20 @@ namespace PriceProof.Application.Auth;
 internal sealed class AuthService : IAuthService
 {
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
-    private readonly ISessionTokenService _sessionTokenService;
+    private readonly IPasswordHashingService _passwordHashingService;
 
     public AuthService(
         IApplicationDbContext dbContext,
-        ISessionTokenService sessionTokenService,
-        IAuditLogWriter auditLogWriter)
+        IPasswordHashingService passwordHashingService,
+        IAuditLogWriter auditLogWriter,
+        ICurrentUserContext currentUserContext)
     {
         _dbContext = dbContext;
-        _sessionTokenService = sessionTokenService;
+        _passwordHashingService = passwordHashingService;
         _auditLogWriter = auditLogWriter;
+        _currentUserContext = currentUserContext;
     }
 
     public async Task<AuthSessionDto> SignUpAsync(SignUpRequest request, CancellationToken cancellationToken)
@@ -30,7 +33,8 @@ internal sealed class AuthService : IAuthService
         request = request with
         {
             Email = InputSanitizer.SanitizeRequiredSingleLine(request.Email, 320),
-            DisplayName = InputSanitizer.SanitizeRequiredSingleLine(request.DisplayName, 120)
+            DisplayName = InputSanitizer.SanitizeRequiredSingleLine(request.DisplayName, 120),
+            Password = request.Password.Trim()
         };
 
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
@@ -39,38 +43,27 @@ internal sealed class AuthService : IAuthService
 
         if (existingUser is not null)
         {
-            if (!existingUser.IsActive)
-            {
-                var reactivatedAtUtc = DateTimeOffset.UtcNow;
-                existingUser.Reactivate(reactivatedAtUtc);
-                _auditLogWriter.Write(nameof(User), "UserReactivated", new { existingUser.Id, existingUser.Email }, reactivatedAtUtc, existingUser.Id);
-                await _dbContext.SaveChangesAsync(cancellationToken);
-            }
-
-            await _auditLogWriter.WriteAndSaveAsync(
-                nameof(User),
-                "UserSignUpReturnedExistingAccount",
-                new { existingUser.Id, existingUser.Email },
-                DateTimeOffset.UtcNow,
-                existingUser.Id,
-                cancellationToken: cancellationToken);
-
-            return MapSession(existingUser);
+            throw new ConflictException("An account with this email address already exists.");
         }
 
         var user = User.Create(request.DisplayName, request.Email);
+        var now = DateTimeOffset.UtcNow;
+        var passwordHash = _passwordHashingService.HashPassword(request.Password);
+        user.SetPassword(passwordHash.PasswordHash, passwordHash.PasswordSalt, passwordHash.PasswordIterations, now);
+        user.RecordSignIn(now);
         _dbContext.Users.Add(user);
-        _auditLogWriter.Write(nameof(User), "UserSignedUp", new { user.Id, user.Email }, DateTimeOffset.UtcNow, user.Id);
+        _auditLogWriter.Write(nameof(User), "UserSignedUp", new { user.Id, user.Email }, now, user.Id);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return MapSession(user);
+        return MapSession(user, now);
     }
 
     public async Task<AuthSessionDto> SignInAsync(SignInRequest request, CancellationToken cancellationToken)
     {
         request = request with
         {
-            Email = InputSanitizer.SanitizeRequiredSingleLine(request.Email, 320)
+            Email = InputSanitizer.SanitizeRequiredSingleLine(request.Email, 320),
+            Password = request.Password.Trim()
         };
 
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
@@ -79,7 +72,7 @@ internal sealed class AuthService : IAuthService
 
         if (user is null)
         {
-            throw new NotFoundException("No user exists for the supplied email address.");
+            throw new ForbiddenException("The email address or password is incorrect.");
         }
 
         if (!user.IsActive)
@@ -87,31 +80,42 @@ internal sealed class AuthService : IAuthService
             throw new ConflictException("This account is currently inactive.");
         }
 
+        if (string.IsNullOrWhiteSpace(user.PasswordHash) ||
+            string.IsNullOrWhiteSpace(user.PasswordSalt) ||
+            !user.PasswordIterations.HasValue ||
+            !_passwordHashingService.VerifyPassword(request.Password, user.PasswordHash, user.PasswordSalt, user.PasswordIterations.Value))
+        {
+            throw new ForbiddenException("The email address or password is incorrect.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        user.RecordSignIn(now);
         await _auditLogWriter.WriteAndSaveAsync(
             nameof(User),
             "UserSignedIn",
             new { user.Id, user.Email },
-            DateTimeOffset.UtcNow,
+            now,
             user.Id,
             cancellationToken: cancellationToken);
 
-        return MapSession(user);
+        return MapSession(user, now);
     }
 
-    public async Task<CurrentUserDto> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<CurrentUserDto> GetCurrentUserAsync(CancellationToken cancellationToken)
     {
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
         var user = await _dbContext.Users
-            .SingleOrDefaultAsync(entity => entity.Id == userId, cancellationToken);
+            .SingleOrDefaultAsync(entity => entity.Id == currentUserId, cancellationToken);
 
         if (user is null)
         {
-            throw new NotFoundException($"User '{userId}' was not found.");
+            throw new NotFoundException($"User '{currentUserId}' was not found.");
         }
 
         return new CurrentUserDto(user.Id, user.Email, user.DisplayName, user.IsActive, user.IsAdmin);
     }
 
-    private AuthSessionDto MapSession(User user)
+    private AuthSessionDto MapSession(User user, DateTimeOffset signedInAtUtc)
     {
         return new AuthSessionDto(
             user.Id,
@@ -119,9 +123,6 @@ internal sealed class AuthService : IAuthService
             user.DisplayName,
             user.IsActive,
             user.IsAdmin,
-            _sessionTokenService.CreateToken(
-                new SessionTokenPayload(user.Id, user.Email, user.IsAdmin, DateTimeOffset.UtcNow),
-                DateTimeOffset.UtcNow.AddHours(12)),
-            DateTimeOffset.UtcNow);
+            signedInAtUtc);
     }
 }

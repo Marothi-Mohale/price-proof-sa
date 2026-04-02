@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
@@ -11,11 +12,13 @@ namespace PriceProof.Application.PriceCaptures;
 internal sealed class PriceCaptureService : IPriceCaptureService
 {
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
 
-    public PriceCaptureService(IApplicationDbContext dbContext, IAuditLogWriter auditLogWriter)
+    public PriceCaptureService(IApplicationDbContext dbContext, ICurrentUserContext currentUserContext, IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
         _auditLogWriter = auditLogWriter;
     }
 
@@ -42,17 +45,13 @@ internal sealed class PriceCaptureService : IPriceCaptureService
             throw new NotFoundException($"Case '{request.CaseId}' was not found.");
         }
 
-        var userExists = await _dbContext.Users
-            .AnyAsync(entity => entity.Id == request.CapturedByUserId, cancellationToken);
-
-        if (!userExists)
-        {
-            throw new NotFoundException($"User '{request.CapturedByUserId}' was not found.");
-        }
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, discrepancyCase.ReportedByUserId);
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
+        request = request with { CapturedByUserId = currentUserId };
 
         var capture = PriceCapture.Create(
             request.CaseId,
-            request.CapturedByUserId,
+            currentUserId,
             request.CaptureType,
             request.EvidenceType,
             request.QuotedAmount,
@@ -73,7 +72,7 @@ internal sealed class PriceCaptureService : IPriceCaptureService
             "PriceCaptureCreated",
             request,
             now,
-            request.CapturedByUserId,
+            currentUserId,
             request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);

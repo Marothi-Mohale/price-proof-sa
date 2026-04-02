@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Cases;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Enums;
 
@@ -10,14 +12,17 @@ namespace PriceProof.Application.Merchants;
 internal sealed class MerchantService : IMerchantService
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly ICurrentUserContext _currentUserContext;
 
-    public MerchantService(IApplicationDbContext dbContext)
+    public MerchantService(IApplicationDbContext dbContext, ICurrentUserContext currentUserContext)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
     }
 
     public async Task<MerchantHistoryDto> GetHistoryAsync(Guid merchantId, CancellationToken cancellationToken)
     {
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
         var merchant = await _dbContext.Merchants
             .AsNoTracking()
             .SingleOrDefaultAsync(entity => entity.Id == merchantId, cancellationToken);
@@ -31,7 +36,8 @@ internal sealed class MerchantService : IMerchantService
             .AsNoTracking()
             .Include(entity => entity.Merchant)
             .Include(entity => entity.Branch)
-            .Where(entity => entity.MerchantId == merchantId)
+            .Where(entity => entity.MerchantId == merchantId &&
+                             (_currentUserContext.IsAdmin || entity.ReportedByUserId == currentUserId))
             .OrderByDescending(entity => entity.UpdatedUtc)
             .ThenByDescending(entity => entity.CreatedUtc)
             .ToListAsync(cancellationToken);

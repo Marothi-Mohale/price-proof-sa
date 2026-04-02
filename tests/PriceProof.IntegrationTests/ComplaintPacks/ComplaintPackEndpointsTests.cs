@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.ComplaintPacks;
 using PriceProof.Application.PaymentRecords;
@@ -18,11 +19,12 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
 
     private readonly PriceProofApiFactory _factory;
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public ComplaintPackEndpointsTests(PriceProofApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -37,7 +39,7 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
             "/price-captures",
             new CreatePriceCaptureRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 CaptureType.PriceTagPhoto,
                 EvidenceType.Image,
                 199.99m,
@@ -54,7 +56,7 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
             "/payment-records",
             new CreatePaymentRecordRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.DebitCard,
                 209.99m,
                 "ZAR",
@@ -73,7 +75,7 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
             new CreateReceiptRecordRequest(
                 createdCase.Id,
                 payment!.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 EvidenceType.Image,
                 "receipt.png",
                 "image/png",
@@ -132,7 +134,7 @@ public sealed class ComplaintPackEndpointsTests : IClassFixture<PriceProofApiFac
         var response = await _client.PostAsJsonAsync(
             "/cases",
             new CreateCaseRequest(
-                SeedData.DemoUserId,
+                _session.UserId,
                 SeedData.ShopriteMerchantId,
                 SeedData.ShopriteSandtonBranchId,
                 "Complaint pack endpoint test basket",

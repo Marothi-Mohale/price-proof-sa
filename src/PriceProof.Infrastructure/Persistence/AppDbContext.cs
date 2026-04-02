@@ -60,6 +60,10 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(entity => entity.DisplayName).HasMaxLength(120).IsRequired();
             builder.Property(entity => entity.Email).HasMaxLength(320).IsRequired();
             builder.Property(entity => entity.NormalizedEmail).HasMaxLength(320).IsRequired();
+            builder.Property(entity => entity.PasswordHash).HasMaxLength(256);
+            builder.Property(entity => entity.PasswordSalt).HasMaxLength(128);
+            builder.Property(entity => entity.PasswordIterations);
+            builder.Property(entity => entity.LastSignedInUtc);
             builder.HasIndex(entity => entity.NormalizedEmail).IsUnique();
             builder.Property(entity => entity.IsAdmin).IsRequired();
             builder.Property(entity => entity.CreatedUtc).IsRequired();
@@ -73,6 +77,10 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     DisplayName = "PriceProof Admin",
                     Email = "admin@priceproof.local",
                     NormalizedEmail = "ADMIN@PRICEPROOF.LOCAL",
+                    PasswordHash = (string?)null,
+                    PasswordSalt = (string?)null,
+                    PasswordIterations = (int?)null,
+                    LastSignedInUtc = (DateTimeOffset?)null,
                     IsActive = true,
                     IsAdmin = true,
                     CreatedUtc = SeedData.SeedTimestamp,
@@ -86,6 +94,10 @@ public sealed class AppDbContext : DbContext, IApplicationDbContext
                     DisplayName = "Demo Investigator",
                     Email = "investigator@priceproof.local",
                     NormalizedEmail = "INVESTIGATOR@PRICEPROOF.LOCAL",
+                    PasswordHash = (string?)null,
+                    PasswordSalt = (string?)null,
+                    PasswordIterations = (int?)null,
+                    LastSignedInUtc = (DateTimeOffset?)null,
                     IsActive = true,
                     IsAdmin = false,
                     CreatedUtc = SeedData.SeedTimestamp,

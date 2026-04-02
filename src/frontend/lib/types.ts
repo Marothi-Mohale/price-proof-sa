@@ -43,7 +43,6 @@ export type AuthSession = {
   displayName: string;
   isActive: boolean;
   isAdmin: boolean;
-  accessToken: string;
   signedInAtUtc: string;
 };
 
@@ -53,13 +52,6 @@ export type CurrentUser = {
   displayName: string;
   isActive: boolean;
   isAdmin: boolean;
-};
-
-export type LookupUser = {
-  id: string;
-  displayName: string;
-  email: string;
-  isActive: boolean;
 };
 
 export type LookupBranch = {
@@ -83,7 +75,6 @@ export type LookupMerchant = {
 };
 
 export type BootstrapLookups = {
-  users: LookupUser[];
   merchants: LookupMerchant[];
 };
 
@@ -528,11 +519,13 @@ export type GeneratedComplaintPack = {
 
 export type SignInRequest = {
   email: string;
+  password: string;
 };
 
 export type SignUpRequest = {
   email: string;
   displayName: string;
+  password: string;
 };
 
 export type GetCasesQuery = {

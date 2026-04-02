@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
@@ -11,11 +12,13 @@ namespace PriceProof.Application.PaymentRecords;
 internal sealed class PaymentRecordService : IPaymentRecordService
 {
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
 
-    public PaymentRecordService(IApplicationDbContext dbContext, IAuditLogWriter auditLogWriter)
+    public PaymentRecordService(IApplicationDbContext dbContext, ICurrentUserContext currentUserContext, IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
         _auditLogWriter = auditLogWriter;
     }
 
@@ -39,17 +42,13 @@ internal sealed class PaymentRecordService : IPaymentRecordService
             throw new NotFoundException($"Case '{request.CaseId}' was not found.");
         }
 
-        var userExists = await _dbContext.Users
-            .AnyAsync(entity => entity.Id == request.RecordedByUserId, cancellationToken);
-
-        if (!userExists)
-        {
-            throw new NotFoundException($"User '{request.RecordedByUserId}' was not found.");
-        }
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, discrepancyCase.ReportedByUserId);
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
+        request = request with { RecordedByUserId = currentUserId };
 
         var paymentRecord = PaymentRecord.Create(
             request.CaseId,
-            request.RecordedByUserId,
+            currentUserId,
             request.PaymentMethod,
             request.Amount,
             request.CurrencyCode,
@@ -67,7 +66,7 @@ internal sealed class PaymentRecordService : IPaymentRecordService
             "PaymentRecordCreated",
             request,
             now,
-            request.RecordedByUserId,
+            currentUserId,
             request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);

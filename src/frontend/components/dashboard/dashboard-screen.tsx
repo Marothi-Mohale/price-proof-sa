@@ -44,7 +44,6 @@ export function DashboardScreen() {
     }
 
     let isCancelled = false;
-    const activeUserId = session.userId;
 
     async function loadDashboard() {
       setLoading(true);
@@ -54,7 +53,6 @@ export function DashboardScreen() {
         const [bootstrap, casePage] = await Promise.all([
           api.getBootstrapLookups(),
           api.listCases({
-            reportedByUserId: activeUserId,
             merchantId: selectedMerchantId || undefined,
             classification: selectedClassification || undefined,
             take: 50

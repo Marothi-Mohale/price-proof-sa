@@ -3,6 +3,7 @@ using PriceProof.Application.Abstractions.Ocr;
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
@@ -15,17 +16,20 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
     private readonly IReceiptDocumentContentResolver _documentContentResolver;
     private readonly IOcrOrchestrator _ocrOrchestrator;
 
     public ReceiptRecordService(
         IApplicationDbContext dbContext,
+        ICurrentUserContext currentUserContext,
         IReceiptDocumentContentResolver documentContentResolver,
         IOcrOrchestrator ocrOrchestrator,
         IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
         _documentContentResolver = documentContentResolver;
         _ocrOrchestrator = ocrOrchestrator;
         _auditLogWriter = auditLogWriter;
@@ -65,18 +69,19 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
             throw new ConflictException("A receipt has already been attached to this payment record.");
         }
 
-        var userExists = await _dbContext.Users
-            .AnyAsync(entity => entity.Id == request.UploadedByUserId, cancellationToken);
-
-        if (!userExists)
+        if (paymentRecord.Case is null)
         {
-            throw new NotFoundException($"User '{request.UploadedByUserId}' was not found.");
+            throw new NotFoundException($"Case '{request.CaseId}' was not found.");
         }
+
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, paymentRecord.Case.ReportedByUserId);
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
+        request = request with { UploadedByUserId = currentUserId };
 
         var receiptRecord = ReceiptRecord.Create(
             request.CaseId,
             request.PaymentRecordId,
-            request.UploadedByUserId,
+            currentUserId,
             request.EvidenceType,
             request.FileName,
             request.ContentType,
@@ -98,7 +103,7 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
             "ReceiptRecordCreated",
             request,
             now,
-            request.UploadedByUserId,
+            currentUserId,
             request.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -115,6 +120,19 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
         {
             throw new NotFoundException($"Receipt record '{id}' was not found.");
         }
+
+        var caseOwnerUserId = await _dbContext.DiscrepancyCases
+            .AsNoTracking()
+            .Where(entity => entity.Id == receiptRecord.CaseId)
+            .Select(entity => entity.ReportedByUserId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (caseOwnerUserId == Guid.Empty)
+        {
+            throw new NotFoundException($"Case '{receiptRecord.CaseId}' was not found.");
+        }
+
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, caseOwnerUserId);
 
         var document = await _documentContentResolver.ResolveAsync(
             receiptRecord.FileName,
@@ -153,7 +171,7 @@ internal sealed class ReceiptRecordService : IReceiptRecordService
                 LineItemCount = ocrResult.LineItems.Count
             },
             processedAtUtc,
-            receiptRecord.UploadedByUserId,
+            CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext),
             receiptRecord.CaseId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);

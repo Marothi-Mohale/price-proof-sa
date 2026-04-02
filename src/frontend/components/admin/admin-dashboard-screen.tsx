@@ -161,7 +161,6 @@ function TableShell({
 export function AdminDashboardScreen() {
   const { session, currentUser } = useSession();
   const isAdmin = currentUser?.isAdmin ?? session?.isAdmin ?? false;
-  const accessToken = session?.accessToken ?? "";
 
   const [lookups, setLookups] = useState<BootstrapLookups | null>(null);
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
@@ -208,7 +207,7 @@ export function AdminDashboardScreen() {
   }, [session]);
 
   useEffect(() => {
-    if (!session || !isAdmin || !accessToken) {
+    if (!session || !isAdmin) {
       setLoading(false);
       return;
     }
@@ -227,18 +226,18 @@ export function AdminDashboardScreen() {
 
       try {
         const [summaryResult, merchantResult, branchResult, uploadResult] = await Promise.all([
-          api.getAdminDashboardSummary(accessToken, query),
-          api.getAdminTopMerchants(accessToken, {
+          api.getAdminDashboardSummary(query),
+          api.getAdminTopMerchants({
             ...query,
             skip: merchantPageIndex * TABLE_PAGE_SIZE,
             take: TABLE_PAGE_SIZE
           }),
-          api.getAdminTopBranches(accessToken, {
+          api.getAdminTopBranches({
             ...query,
             skip: branchPageIndex * TABLE_PAGE_SIZE,
             take: TABLE_PAGE_SIZE
           }),
-          api.getAdminRecentUploads(accessToken, {
+          api.getAdminRecentUploads({
             ...query,
             skip: uploadPageIndex * TABLE_PAGE_SIZE,
             take: TABLE_PAGE_SIZE
@@ -268,19 +267,14 @@ export function AdminDashboardScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [accessToken, appliedFilters, branchPageIndex, isAdmin, merchantPageIndex, session, uploadPageIndex]);
+  }, [appliedFilters, branchPageIndex, isAdmin, merchantPageIndex, session, uploadPageIndex]);
 
   async function handleExport() {
-    if (!accessToken) {
-      setError("A fresh admin sign-in is required before reports can be exported.");
-      return;
-    }
-
     setExporting(true);
     setError(null);
 
     try {
-      await api.downloadAdminDashboardCsv(accessToken, toFilterQuery(appliedFilters));
+      await api.downloadAdminDashboardCsv(toFilterQuery(appliedFilters));
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : "Unable to export the admin report.");
     } finally {
@@ -331,23 +325,6 @@ export function AdminDashboardScreen() {
         <ErrorState
           title="Admin access required"
           message="Sign in with an administrator account to review reports, OCR outcomes, and merchant risk signals."
-        />
-      </div>
-    );
-  }
-
-  if (!accessToken) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          eyebrow="Admin"
-          title="Operations dashboard"
-          description="The reporting endpoints require a verified admin session before any data is loaded."
-          actions={<ButtonLink href="/auth" variant="secondary">Sign in again</ButtonLink>}
-        />
-        <ErrorState
-          title="Fresh sign-in required"
-          message="This browser session does not include an admin access token yet. Sign in again to continue."
         />
       </div>
     );

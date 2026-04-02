@@ -20,6 +20,14 @@ public sealed class User : SoftDeletableEntity
 
     public string NormalizedEmail { get; private set; } = string.Empty;
 
+    public string? PasswordHash { get; private set; }
+
+    public string? PasswordSalt { get; private set; }
+
+    public int? PasswordIterations { get; private set; }
+
+    public DateTimeOffset? LastSignedInUtc { get; private set; }
+
     public bool IsActive { get; private set; }
 
     public bool IsAdmin { get; private set; }
@@ -46,6 +54,35 @@ public sealed class User : SoftDeletableEntity
             IsActive = true,
             IsAdmin = isAdmin
         };
+    }
+
+    public void SetPassword(string passwordHash, string passwordSalt, int passwordIterations, DateTimeOffset now)
+    {
+        PasswordHash = passwordHash.Trim();
+        PasswordSalt = passwordSalt.Trim();
+        PasswordIterations = passwordIterations;
+        UpdatedUtc = now;
+    }
+
+    public void RecordSignIn(DateTimeOffset now)
+    {
+        LastSignedInUtc = now;
+        UpdatedUtc = now;
+    }
+
+    public void UpdateProfile(string displayName, string email, DateTimeOffset now)
+    {
+        var trimmedEmail = email.Trim();
+        DisplayName = displayName.Trim();
+        Email = trimmedEmail;
+        NormalizedEmail = trimmedEmail.ToUpperInvariant();
+        UpdatedUtc = now;
+    }
+
+    public void PromoteToAdmin(DateTimeOffset now)
+    {
+        IsAdmin = true;
+        UpdatedUtc = now;
     }
 
     public void Deactivate(DateTimeOffset now)

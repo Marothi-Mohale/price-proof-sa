@@ -1,12 +1,38 @@
 import { z } from "zod";
 
+const passwordRequirementMessage = "Use at least 12 characters with uppercase, lowercase, a number, and a symbol.";
+
+const strongPasswordSchema = z
+  .string()
+  .min(12, passwordRequirementMessage)
+  .max(256)
+  .refine(
+    (value) =>
+      /[A-Z]/.test(value) &&
+      /[a-z]/.test(value) &&
+      /\d/.test(value) &&
+      /[^A-Za-z0-9]/.test(value),
+    passwordRequirementMessage
+  );
+
 export const signInSchema = z.object({
-  email: z.string().trim().email("Enter a valid email address.").max(320)
+  email: z.string().trim().email("Enter a valid email address.").max(320),
+  password: strongPasswordSchema
 });
 
 export const signUpSchema = z.object({
   displayName: z.string().trim().min(2, "Enter your name.").max(120),
-  email: z.string().trim().email("Enter a valid email address.").max(320)
+  email: z.string().trim().email("Enter a valid email address.").max(320),
+  password: strongPasswordSchema,
+  confirmPassword: z.string().min(1, "Confirm your password.")
+}).superRefine((value, context) => {
+  if (value.password !== value.confirmPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmPassword"],
+      message: "Passwords must match."
+    });
+  }
 });
 
 export const caseDetailsSchema = z.object({

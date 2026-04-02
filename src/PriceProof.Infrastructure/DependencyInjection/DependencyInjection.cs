@@ -5,12 +5,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PriceProof.Application.Abstractions.ComplaintPacks;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Ocr;
 using PriceProof.Application.Abstractions.Persistence;
 using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Domain.Entities;
 using PriceProof.Infrastructure.Auth;
 using PriceProof.Infrastructure.ComplaintPacks;
 using PriceProof.Infrastructure.Diagnostics;
@@ -36,9 +38,13 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddSingleton<AuditingInterceptor>();
         services.AddScoped<IRequestContextAccessor, HttpContextRequestContextAccessor>();
+        services.AddScoped<ICurrentUserContext, HttpContextCurrentUserContext>();
+        services.AddSingleton<IPasswordHashingService, Pbkdf2PasswordHashingService>();
+        services.Configure<BootstrapAdminOptions>(configuration.GetSection(BootstrapAdminOptions.SectionName));
         services.Configure<ComplaintPackOptions>(configuration.GetSection(ComplaintPackOptions.SectionName));
         services.Configure<FileUploadOptions>(configuration.GetSection(FileUploadOptions.SectionName));
         services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
+        services.Configure<SessionAuthOptions>(configuration.GetSection(SessionAuthOptions.SectionName));
 
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
         {
@@ -81,10 +87,12 @@ public static class DependencyInjection
         await using var scope = serviceProvider.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
 
         if (environment.IsEnvironment("Testing"))
         {
             await dbContext.Database.EnsureCreatedAsync();
+            await EnsureBootstrapAdminAsync(scope.ServiceProvider, dbContext, environment, configuration, logger: null);
             return;
         }
 
@@ -100,6 +108,7 @@ public static class DependencyInjection
             {
                 await dbContext.Database.MigrateAsync();
                 await RepairKnownSchemaDriftAsync(dbContext, logger);
+                await EnsureBootstrapAdminAsync(scope.ServiceProvider, dbContext, environment, configuration, logger);
                 return;
             }
             catch (Exception exception) when (attempt < maxAttempts)
@@ -120,6 +129,11 @@ public static class DependencyInjection
     private static async Task RepairKnownSchemaDriftAsync(AppDbContext dbContext, ILogger? logger)
     {
         const string compatibilitySql = """
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordHash" character varying(256);
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordSalt" character varying(128);
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "PasswordIterations" integer;
+                                        ALTER TABLE users ADD COLUMN IF NOT EXISTS "LastSignedInUtc" timestamp with time zone;
+
                                         ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisClassification" integer;
                                         ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisConfidence" numeric(5,4);
                                         ALTER TABLE cases ADD COLUMN IF NOT EXISTS "AnalysisExplanation" character varying(2000);
@@ -200,5 +214,116 @@ public static class DependencyInjection
         logger?.LogInformation(
             "Ensured compatibility schema for analysis, OCR, and risk-scoring fields after migrations. Admin seed user: {AdminUserId}",
             SeedData.AdminUserId);
+    }
+
+    private static async Task EnsureBootstrapAdminAsync(
+        IServiceProvider serviceProvider,
+        AppDbContext dbContext,
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        ILogger? logger)
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<BootstrapAdminOptions>>().Value;
+        var passwordHashingService = serviceProvider.GetRequiredService<IPasswordHashingService>();
+        var now = DateTimeOffset.UtcNow;
+
+        if (environment.IsProduction())
+        {
+            var localSeedUsers = await dbContext.Users
+                .Where(entity => entity.Email.EndsWith("@priceproof.local"))
+                .ToListAsync();
+
+            foreach (var localSeedUser in localSeedUsers.Where(entity => entity.IsActive))
+            {
+                localSeedUser.Deactivate(now);
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Email) &&
+            !string.IsNullOrWhiteSpace(options.DisplayName) &&
+            !string.IsNullOrWhiteSpace(options.Password))
+        {
+            var normalizedEmail = options.Email.Trim().ToUpperInvariant();
+            var existingAdmin = await dbContext.Users
+                .SingleOrDefaultAsync(entity => entity.NormalizedEmail == normalizedEmail);
+            var passwordHash = passwordHashingService.HashPassword(options.Password.Trim());
+
+            if (existingAdmin is null)
+            {
+                existingAdmin = User.Create(options.DisplayName.Trim(), options.Email.Trim(), isAdmin: true);
+                existingAdmin.SetPassword(passwordHash.PasswordHash, passwordHash.PasswordSalt, passwordHash.PasswordIterations, now);
+                dbContext.Users.Add(existingAdmin);
+                logger?.LogInformation("Created bootstrap admin account for {Email}.", options.Email.Trim());
+            }
+            else
+            {
+                existingAdmin.UpdateProfile(options.DisplayName.Trim(), options.Email.Trim(), now);
+                existingAdmin.PromoteToAdmin(now);
+                existingAdmin.Reactivate(now);
+                existingAdmin.SetPassword(passwordHash.PasswordHash, passwordHash.PasswordSalt, passwordHash.PasswordIterations, now);
+                logger?.LogInformation("Updated bootstrap admin account for {Email}.", options.Email.Trim());
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        if (!environment.IsProduction())
+        {
+            return;
+        }
+
+        var activeAdminExists = await dbContext.Users.AnyAsync(entity => entity.IsActive && entity.IsAdmin);
+        if (!activeAdminExists)
+        {
+            throw new InvalidOperationException(
+                "No active admin account is configured for production. Supply the bootstrap admin settings through secure deployment configuration.");
+        }
+
+        ValidateProductionConfiguration(configuration);
+    }
+
+    private static void ValidateProductionConfiguration(IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(connectionString) ||
+            connectionString.Contains("Password=priceproof", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("Host=localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("A production database connection string must be supplied through secure configuration.");
+        }
+
+        var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        if (allowedOrigins.Any(origin => origin.Contains("localhost", StringComparison.OrdinalIgnoreCase) || origin.Contains("127.0.0.1")))
+        {
+            throw new InvalidOperationException("Production CORS origins cannot point to localhost.");
+        }
+
+        var ocrEnabled = configuration.GetValue<bool>("Ocr:Enabled");
+        if (!ocrEnabled)
+        {
+            return;
+        }
+
+        var primaryProvider = configuration.GetValue<string>("Ocr:PrimaryProvider");
+        if (string.Equals(primaryProvider, "AzureDocumentIntelligence", StringComparison.OrdinalIgnoreCase))
+        {
+            var endpoint = configuration["Ocr:AzureDocumentIntelligence:Endpoint"];
+            var apiKey = configuration["Ocr:AzureDocumentIntelligence:ApiKey"];
+            if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new InvalidOperationException("Azure Document Intelligence OCR is enabled but its secure configuration is incomplete.");
+            }
+        }
+
+        if (string.Equals(primaryProvider, "GoogleVision", StringComparison.OrdinalIgnoreCase))
+        {
+            var apiKey = configuration["Ocr:GoogleVision:ApiKey"];
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new InvalidOperationException("Google Vision OCR is enabled but its API key is missing.");
+            }
+        }
     }
 }

@@ -90,8 +90,9 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
               <Button
                 variant="secondary"
                 onClick={() => {
-                  signOut();
-                  router.replace("/auth");
+                  void signOut().finally(() => {
+                    router.replace("/auth");
+                  });
                 }}
               >
                 Sign out

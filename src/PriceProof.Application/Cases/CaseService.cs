@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
 using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
@@ -13,17 +14,20 @@ namespace PriceProof.Application.Cases;
 internal sealed class CaseService : ICaseService
 {
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
     private readonly IDiscrepancyDetectionEngine _discrepancyDetectionEngine;
     private readonly IRiskService _riskService;
 
     public CaseService(
         IApplicationDbContext dbContext,
+        ICurrentUserContext currentUserContext,
         IDiscrepancyDetectionEngine discrepancyDetectionEngine,
         IRiskService riskService,
         IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
         _discrepancyDetectionEngine = discrepancyDetectionEngine;
         _riskService = riskService;
         _auditLogWriter = auditLogWriter;
@@ -32,9 +36,11 @@ internal sealed class CaseService : ICaseService
     public async Task<CaseDetailDto> CreateAsync(CreateCaseRequest request, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
 
         request = request with
         {
+            ReportedByUserId = currentUserId,
             BasketDescription = InputSanitizer.SanitizeRequiredSingleLine(request.BasketDescription, 500),
             CurrencyCode = InputSanitizer.SanitizeCurrencyCode(request.CurrencyCode),
             CustomerReference = InputSanitizer.SanitizeSingleLine(request.CustomerReference, 64),
@@ -43,17 +49,17 @@ internal sealed class CaseService : ICaseService
         };
 
         var user = await _dbContext.Users
-            .SingleOrDefaultAsync(entity => entity.Id == request.ReportedByUserId, cancellationToken);
+            .SingleOrDefaultAsync(entity => entity.Id == currentUserId, cancellationToken);
 
         if (user is null)
         {
-            throw new NotFoundException($"User '{request.ReportedByUserId}' was not found.");
+            throw new NotFoundException($"User '{currentUserId}' was not found.");
         }
 
         var merchantResolution = await ResolveMerchantAsync(request, now, cancellationToken);
 
         var discrepancyCase = DiscrepancyCase.Create(
-            request.ReportedByUserId,
+            currentUserId,
             merchantResolution.Merchant.Id,
             merchantResolution.BranchId,
             request.BasketDescription,
@@ -76,7 +82,7 @@ internal sealed class CaseService : ICaseService
                     discrepancyCase.Id
                 },
                 now,
-                request.ReportedByUserId,
+                currentUserId,
                 discrepancyCase.Id);
         }
 
@@ -91,7 +97,7 @@ internal sealed class CaseService : ICaseService
                 merchantResolution.CreatedNewMerchant
             },
             now,
-            request.ReportedByUserId,
+            currentUserId,
             discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -109,11 +115,13 @@ internal sealed class CaseService : ICaseService
             throw new NotFoundException($"Case '{id}' was not found.");
         }
 
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, discrepancyCase.ReportedByUserId);
         return discrepancyCase.ToDetailDto();
     }
 
     public async Task<PagedResult<CaseSummaryDto>> ListAsync(GetCasesQuery query, CancellationToken cancellationToken)
     {
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
         var take = Math.Clamp(query.Take, 1, 100);
         var skip = Math.Max(0, query.Skip);
 
@@ -123,12 +131,17 @@ internal sealed class CaseService : ICaseService
             .Include(entity => entity.Branch)
             .AsQueryable();
 
+        if (!_currentUserContext.IsAdmin)
+        {
+            casesQuery = casesQuery.Where(entity => entity.ReportedByUserId == currentUserId);
+        }
+
         if (query.MerchantId.HasValue)
         {
             casesQuery = casesQuery.Where(entity => entity.MerchantId == query.MerchantId.Value);
         }
 
-        if (query.ReportedByUserId.HasValue)
+        if (_currentUserContext.IsAdmin && query.ReportedByUserId.HasValue)
         {
             casesQuery = casesQuery.Where(entity => entity.ReportedByUserId == query.ReportedByUserId.Value);
         }
@@ -170,6 +183,8 @@ internal sealed class CaseService : ICaseService
             throw new NotFoundException($"Case '{id}' was not found.");
         }
 
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, discrepancyCase.ReportedByUserId);
+
         if (!discrepancyCase.LatestQuotedAmount.HasValue || !discrepancyCase.LatestPaidAmount.HasValue)
         {
             throw new ConflictException("A case needs both a quoted amount and a charged amount before analysis can run.");
@@ -207,7 +222,7 @@ internal sealed class CaseService : ICaseService
                 }
             },
             now,
-            discrepancyCase.ReportedByUserId,
+            CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext),
             discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);

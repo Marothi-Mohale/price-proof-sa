@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.PaymentRecords;
 using PriceProof.Application.PriceCaptures;
@@ -13,10 +14,11 @@ namespace PriceProof.IntegrationTests.Cases;
 public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
 {
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public EvidenceEndpointsTests(PriceProofApiFactory factory)
     {
-        _client = factory.CreateClient();
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -26,7 +28,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
 
         var captureRequest = new CreatePriceCaptureRequest(
             createdCase.Id,
-            SeedData.DemoUserId,
+            _session.UserId,
             CaptureType.PriceTagPhoto,
             EvidenceType.Image,
             129.99m,
@@ -53,7 +55,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
 
         var paymentRequest = new CreatePaymentRecordRequest(
             createdCase.Id,
-            SeedData.DemoUserId,
+            _session.UserId,
             PaymentMethod.CreditCard,
             139.99m,
             "ZAR",
@@ -80,7 +82,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
         var receiptRequest = new CreateReceiptRecordRequest(
             createdCase.Id,
             payment.Id,
-            SeedData.DemoUserId,
+            _session.UserId,
             EvidenceType.Image,
             "receipt.jpg",
             "image/jpeg",
@@ -119,7 +121,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
             "/payment-records",
             new CreatePaymentRecordRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.Cash,
                 89.99m,
                 "ZAR",
@@ -137,7 +139,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
         var firstReceiptRequest = new CreateReceiptRecordRequest(
             createdCase.Id,
             payment!.Id,
-            SeedData.DemoUserId,
+            _session.UserId,
             EvidenceType.Image,
             "receipt-1.jpg",
             "image/jpeg",
@@ -171,7 +173,7 @@ public sealed class EvidenceEndpointsTests : IClassFixture<PriceProofApiFactory>
     private async Task<CaseDetailDto> CreateCaseAsync()
     {
         var request = new CreateCaseRequest(
-            SeedData.DemoUserId,
+            _session.UserId,
             SeedData.ShopriteMerchantId,
             SeedData.ShopriteSandtonBranchId,
             "Basket of household staples disputed at checkout",

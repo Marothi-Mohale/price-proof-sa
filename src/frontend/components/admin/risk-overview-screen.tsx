@@ -34,10 +34,9 @@ export function RiskOverviewScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = currentUser?.isAdmin ?? session?.isAdmin ?? false;
-  const accessToken = session?.accessToken ?? "";
 
   useEffect(() => {
-    if (!session || !isAdmin || !accessToken) {
+    if (!session || !isAdmin) {
       setLoading(false);
       return;
     }
@@ -49,7 +48,7 @@ export function RiskOverviewScreen() {
       setError(null);
 
       try {
-        const result = await api.getRiskOverview(accessToken);
+        const result = await api.getRiskOverview();
 
         if (!isCancelled) {
           setOverview(result);
@@ -70,7 +69,7 @@ export function RiskOverviewScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [accessToken, isAdmin, session]);
+  }, [isAdmin, session]);
 
   if (!isAdmin) {
     return (

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.ComplaintPacks;
 using PriceProof.Application.PaymentRecords;
@@ -20,24 +21,25 @@ public sealed class MainApiFlowTests : IClassFixture<PriceProofApiFactory>
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlH0n0AAAAASUVORK5CYII=");
 
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public MainApiFlowTests(PriceProofApiFactory factory)
     {
-        _client = factory.CreateClient();
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
     public async Task Main_case_flow_should_create_analyze_and_generate_outputs()
     {
         var createdCase = await CreateCaseAsync();
-        var quotedUpload = await UploadAsync("quoted-price.png", "image/png", TinyPngBytes, "quoted evidence");
-        var receiptUpload = await UploadAsync("receipt.png", "image/png", TinyPngBytes, "receipt evidence");
+        var quotedUpload = await UploadAsync(createdCase.Id, "quoted-price.png", "image/png", TinyPngBytes, "quoted evidence");
+        var receiptUpload = await UploadAsync(createdCase.Id, "receipt.png", "image/png", TinyPngBytes, "receipt evidence");
 
         var captureResponse = await _client.PostAsJsonAsync(
             "/price-captures",
             new CreatePriceCaptureRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 CaptureType.PriceTagPhoto,
                 EvidenceType.Image,
                 49.99m,
@@ -56,7 +58,7 @@ public sealed class MainApiFlowTests : IClassFixture<PriceProofApiFactory>
             "/payment-records",
             new CreatePaymentRecordRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.CreditCard,
                 54.99m,
                 "ZAR",
@@ -75,7 +77,7 @@ public sealed class MainApiFlowTests : IClassFixture<PriceProofApiFactory>
             new CreateReceiptRecordRequest(
                 createdCase.Id,
                 payment!.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 EvidenceType.Image,
                 receiptUpload.FileName,
                 receiptUpload.ContentType,
@@ -143,7 +145,7 @@ public sealed class MainApiFlowTests : IClassFixture<PriceProofApiFactory>
         var response = await _client.PostAsJsonAsync(
             "/cases",
             new CreateCaseRequest(
-                SeedData.DemoUserId,
+                _session.UserId,
                 SeedData.ShopriteMerchantId,
                 SeedData.ShopriteSandtonBranchId,
                 "Main flow basket",
@@ -160,13 +162,14 @@ public sealed class MainApiFlowTests : IClassFixture<PriceProofApiFactory>
         return createdCase!;
     }
 
-    private async Task<UploadedFileDto> UploadAsync(string fileName, string contentType, byte[] bytes, string category)
+    private async Task<UploadedFileDto> UploadAsync(Guid caseId, string fileName, string contentType, byte[] bytes, string category)
     {
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent(bytes);
         fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
         content.Add(fileContent, "file", fileName);
         content.Add(new StringContent(category), "category");
+        content.Add(new StringContent(caseId.ToString()), "caseId");
 
         var response = await _client.PostAsync("/uploads", content);
         var body = await response.Content.ReadAsStringAsync();

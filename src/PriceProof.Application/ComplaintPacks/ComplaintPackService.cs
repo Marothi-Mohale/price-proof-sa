@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using PriceProof.Application.Abstractions.ComplaintPacks;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application.Abstractions.Persistence;
+using PriceProof.Application.Abstractions.Security;
 using PriceProof.Application.Abstractions.Services;
+using PriceProof.Application.Common;
 using PriceProof.Application.Common.Exceptions;
 using PriceProof.Domain.Entities;
 using PriceProof.Domain.Enums;
@@ -14,6 +16,7 @@ namespace PriceProof.Application.ComplaintPacks;
 internal sealed class ComplaintPackService : IComplaintPackService
 {
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly ICurrentUserContext _currentUserContext;
     private readonly IApplicationDbContext _dbContext;
     private readonly IComplaintPackGenerator _complaintPackGenerator;
     private readonly IComplaintPackDocumentStore _documentStore;
@@ -22,6 +25,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
 
     public ComplaintPackService(
         IApplicationDbContext dbContext,
+        ICurrentUserContext currentUserContext,
         IComplaintPackGenerator complaintPackGenerator,
         IComplaintPackDocumentStore documentStore,
         IComplaintNarrativeComposer complaintNarrativeComposer,
@@ -29,6 +33,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
         IAuditLogWriter auditLogWriter)
     {
         _dbContext = dbContext;
+        _currentUserContext = currentUserContext;
         _complaintPackGenerator = complaintPackGenerator;
         _documentStore = documentStore;
         _complaintNarrativeComposer = complaintNarrativeComposer;
@@ -51,6 +56,8 @@ internal sealed class ComplaintPackService : IComplaintPackService
         {
             throw new NotFoundException($"Case '{caseId}' was not found.");
         }
+
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, discrepancyCase.ReportedByUserId);
 
         if (!discrepancyCase.LatestQuotedAmount.HasValue || !discrepancyCase.LatestPaidAmount.HasValue)
         {
@@ -169,10 +176,11 @@ internal sealed class ComplaintPackService : IComplaintPackService
             cancellationToken);
 
         var storedDocument = await _documentStore.SaveAsync(discrepancyCase.Id, document, cancellationToken);
+        var currentUserId = CurrentUserGuards.RequireAuthenticatedUserId(_currentUserContext);
 
         var complaintPack = ComplaintPack.Create(
             discrepancyCase.Id,
-            discrepancyCase.ReportedByUserId,
+            currentUserId,
             storedDocument.FileName,
             storedDocument.StoragePath,
             storedDocument.ContentHash,
@@ -198,7 +206,7 @@ internal sealed class ComplaintPackService : IComplaintPackService
                 RecommendedSubmissionChannels = submissionGuidance.RecommendedRoutes.Select(route => route.Channel).ToArray()
             },
             now,
-            discrepancyCase.ReportedByUserId,
+            currentUserId,
             discrepancyCase.Id);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -228,6 +236,18 @@ internal sealed class ComplaintPackService : IComplaintPackService
             throw new NotFoundException($"Complaint pack '{complaintPackId}' was not found.");
         }
 
+        var caseOwnerUserId = await _dbContext.DiscrepancyCases
+            .AsNoTracking()
+            .Where(entity => entity.Id == complaintPack.CaseId)
+            .Select(entity => entity.ReportedByUserId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (caseOwnerUserId == Guid.Empty)
+        {
+            throw new NotFoundException($"Case '{complaintPack.CaseId}' was not found.");
+        }
+
+        CurrentUserGuards.EnsureCanAccessCase(_currentUserContext, caseOwnerUserId);
         var file = await _documentStore.DownloadAsync(complaintPack.FileName, complaintPack.StoragePath, cancellationToken);
         return new ComplaintPackDownloadDto(file.FileName, file.ContentType, file.Content);
     }

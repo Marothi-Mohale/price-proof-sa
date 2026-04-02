@@ -13,8 +13,8 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
   const router = useRouter();
   const { authBusy, authError, currentUser, session, signIn, signUp } = useSession();
   const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
-  const [signInValues, setSignInValues] = useState({ email: "" });
-  const [signUpValues, setSignUpValues] = useState({ displayName: "", email: "" });
+  const [signInValues, setSignInValues] = useState({ email: "", password: "" });
+  const [signUpValues, setSignUpValues] = useState({ displayName: "", email: "", password: "", confirmPassword: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -53,7 +53,11 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
     setErrors({});
 
     try {
-      await signUp(parsed.data);
+      await signUp({
+        displayName: parsed.data.displayName,
+        email: parsed.data.email,
+        password: parsed.data.password
+      });
       router.replace(nextDestination ?? "/dashboard");
     } catch {
     }
@@ -67,13 +71,12 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
           <div className="space-y-3">
             <CardTitle className="text-3xl text-white">Sign in to your evidence workspace</CardTitle>
             <CardDescription className="text-slate-200">
-              This build uses the live API session endpoints. Sign up creates a real user record, and sign in restores
-              your workspace using the email address on file.
+              This build uses the live API session endpoints. Sign up creates a real user record with a hashed
+              password, and sign in restores your workspace with a secure session cookie.
             </CardDescription>
           </div>
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 text-sm leading-6 text-slate-200">
-            Password-based authentication is not available in the backend yet, so this screen intentionally keeps the
-            flow simple and honest.
+            Passwords must be at least 12 characters long and include uppercase, lowercase, a number, and a symbol.
           </div>
         </Card>
 
@@ -118,7 +121,17 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
                   placeholder="name@example.com"
                   autoComplete="email"
                   value={signInValues.email}
-                  onChange={(event) => setSignInValues({ email: event.target.value })}
+                  onChange={(event) => setSignInValues((current) => ({ ...current, email: event.target.value }))}
+                />
+              </FieldShell>
+              <FieldShell htmlFor="sign-in-password" label="Password" error={errors.password} required>
+                <TextInput
+                  id="sign-in-password"
+                  type="password"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  value={signInValues.password}
+                  onChange={(event) => setSignInValues((current) => ({ ...current, password: event.target.value }))}
                 />
               </FieldShell>
               <Button type="submit" busy={authBusy} className="w-full">
@@ -145,6 +158,26 @@ export function AuthScreen({ nextDestination }: { nextDestination?: string }) {
                   autoComplete="email"
                   value={signUpValues.email}
                   onChange={(event) => setSignUpValues((current) => ({ ...current, email: event.target.value }))}
+                />
+              </FieldShell>
+              <FieldShell htmlFor="sign-up-password" label="Password" error={errors.password} required>
+                <TextInput
+                  id="sign-up-password"
+                  type="password"
+                  placeholder="Create a strong password"
+                  autoComplete="new-password"
+                  value={signUpValues.password}
+                  onChange={(event) => setSignUpValues((current) => ({ ...current, password: event.target.value }))}
+                />
+              </FieldShell>
+              <FieldShell htmlFor="sign-up-confirm-password" label="Confirm password" error={errors.confirmPassword} required>
+                <TextInput
+                  id="sign-up-confirm-password"
+                  type="password"
+                  placeholder="Confirm your password"
+                  autoComplete="new-password"
+                  value={signUpValues.confirmPassword}
+                  onChange={(event) => setSignUpValues((current) => ({ ...current, confirmPassword: event.target.value }))}
                 />
               </FieldShell>
               <Button type="submit" busy={authBusy} className="w-full">

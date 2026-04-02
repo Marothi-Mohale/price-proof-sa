@@ -14,7 +14,7 @@ type SessionContextValue = {
   authError: string | null;
   signIn: (input: SignInRequest) => Promise<AuthSession>;
   signUp: (input: SignUpRequest) => Promise<AuthSession>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   updatePreferences: (next: AppPreferences) => void;
 };
@@ -48,7 +48,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     void (async () => {
       try {
-        const user = await api.getCurrentUser(storedSession.userId);
+        const user = await api.getCurrentUser();
 
         if (!isCancelled) {
           setCurrentUser(user);
@@ -93,7 +93,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const nextSession = await action;
-      const nextUser = await api.getCurrentUser(nextSession.userId);
+      const nextUser = await api.getCurrentUser();
 
       setSession(nextSession);
       setCurrentUser(nextUser);
@@ -113,14 +113,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const nextUser = await api.getCurrentUser(session.userId);
+    const nextUser = await api.getCurrentUser();
     setCurrentUser(nextUser);
   }
 
-  function signOut() {
-    setSession(null);
-    setCurrentUser(null);
-    setAuthError(null);
+  async function signOut() {
+    try {
+      await api.signOut();
+    } catch {
+    } finally {
+      setSession(null);
+      setCurrentUser(null);
+      setAuthError(null);
+    }
   }
 
   function updatePreferences(next: AppPreferences) {

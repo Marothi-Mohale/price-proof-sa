@@ -16,6 +16,10 @@ namespace PriceProof.IntegrationTests;
 
 public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    public const string BootstrapAdminEmail = "admin.integration@priceproof.test";
+    public const string BootstrapAdminPassword = "Admin!SecurePass123";
+    public const string BootstrapAdminDisplayName = "Integration Admin";
+
     private SqliteConnection? _connection;
     private string? _storageRootPath;
 
@@ -68,6 +72,12 @@ public sealed class PriceProofApiFactory : WebApplicationFactory<Program>, IAsyn
                 options.StorageRootPath = _storageRootPath!;
                 options.IncludeEvidencePreviews = true;
                 options.IncludeEvidenceReferences = true;
+            });
+            services.PostConfigure<BootstrapAdminOptions>(options =>
+            {
+                options.Email = BootstrapAdminEmail;
+                options.DisplayName = BootstrapAdminDisplayName;
+                options.Password = BootstrapAdminPassword;
             });
             services.PostConfigure<FileUploadOptions>(options =>
             {

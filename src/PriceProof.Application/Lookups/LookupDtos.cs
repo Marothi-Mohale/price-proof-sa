@@ -1,11 +1,5 @@
 namespace PriceProof.Application.Lookups;
 
-public sealed record LookupUserDto(
-    Guid Id,
-    string DisplayName,
-    string Email,
-    bool IsActive);
-
 public sealed record LookupBranchDto(
     Guid Id,
     Guid MerchantId,
@@ -25,5 +19,4 @@ public sealed record LookupMerchantDto(
     IReadOnlyCollection<LookupBranchDto> Branches);
 
 public sealed record BootstrapLookupsDto(
-    IReadOnlyCollection<LookupUserDto> Users,
     IReadOnlyCollection<LookupMerchantDto> Merchants);

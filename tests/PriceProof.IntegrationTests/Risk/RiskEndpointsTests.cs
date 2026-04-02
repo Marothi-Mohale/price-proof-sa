@@ -13,11 +13,14 @@ namespace PriceProof.IntegrationTests.Risk;
 
 public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
 {
+    private readonly PriceProofApiFactory _factory;
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public RiskEndpointsTests(PriceProofApiFactory factory)
     {
-        _client = factory.CreateClient();
+        _factory = factory;
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -53,14 +56,10 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
     [Fact]
     public async Task Overview_should_require_admin_access()
     {
-        var session = await SignInAsync("investigator@priceproof.local");
-        _client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.AccessToken);
-
         var response = await _client.GetAsync("/risk/overview");
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
-        body.Should().Contain("admin session");
     }
 
     [Fact]
@@ -71,10 +70,9 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
         await AddQuotedAndPaidEvidenceAsync(createdCase.Id);
         await AnalyzeAsync(createdCase.Id);
 
-        var session = await SignInAsync("admin@priceproof.local");
-        _client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.AccessToken);
+        var (adminClient, _) = await _factory.CreateAuthenticatedClientAsync(admin: true);
 
-        var response = await _client.GetAsync("/risk/overview");
+        var response = await adminClient.GetAsync("/risk/overview");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
@@ -89,7 +87,7 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
         var response = await _client.PostAsJsonAsync(
             "/cases",
             new CreateCaseRequest(
-                SeedData.DemoUserId,
+                _session.UserId,
                 SeedData.ShopriteMerchantId,
                 SeedData.ShopriteSandtonBranchId,
                 "Risk scoring integration scenario",
@@ -112,7 +110,7 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
             "/price-captures",
             new CreatePriceCaptureRequest(
                 caseId,
-                SeedData.DemoUserId,
+                _session.UserId,
                 CaptureType.PriceTagPhoto,
                 EvidenceType.Image,
                 100m,
@@ -129,7 +127,7 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
             "/payment-records",
             new CreatePaymentRecordRequest(
                 caseId,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.CreditCard,
                 112m,
                 "ZAR",
@@ -148,16 +146,5 @@ public sealed class RiskEndpointsTests : IClassFixture<PriceProofApiFactory>
 
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-    }
-
-    private async Task<AuthSessionDto> SignInAsync(string email)
-    {
-        var response = await _client.PostAsJsonAsync("/auth/sign-in", new SignInRequest(email));
-        var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-
-        var session = await response.Content.ReadFromJsonAsync<AuthSessionDto>();
-        session.Should().NotBeNull();
-        return session!;
     }
 }

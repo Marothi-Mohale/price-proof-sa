@@ -15,12 +15,6 @@ internal sealed class LookupService : ILookupService
 
     public async Task<BootstrapLookupsDto> GetBootstrapAsync(CancellationToken cancellationToken)
     {
-        var users = await _dbContext.Users
-            .AsNoTracking()
-            .OrderBy(entity => entity.DisplayName)
-            .Select(entity => new LookupUserDto(entity.Id, entity.DisplayName, entity.Email, entity.IsActive))
-            .ToListAsync(cancellationToken);
-
         var merchants = await _dbContext.Merchants
             .AsNoTracking()
             .Include(entity => entity.Branches)
@@ -28,7 +22,6 @@ internal sealed class LookupService : ILookupService
             .ToListAsync(cancellationToken);
 
         return new BootstrapLookupsDto(
-            users,
             merchants.Select(entity => new LookupMerchantDto(
                     entity.Id,
                     entity.Name,

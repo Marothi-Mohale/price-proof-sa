@@ -8,5 +8,5 @@ public interface IAuthService
 
     Task<AuthSessionDto> SignInAsync(SignInRequest request, CancellationToken cancellationToken);
 
-    Task<CurrentUserDto> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken);
+    Task<CurrentUserDto> GetCurrentUserAsync(CancellationToken cancellationToken);
 }

@@ -3,12 +3,16 @@ using System.Threading.RateLimiting;
 using System.Text.Json.Serialization;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using PriceProof.Api.Middleware;
 using PriceProof.Application.Abstractions.Diagnostics;
 using PriceProof.Application;
 using PriceProof.Application.Cases;
+using PriceProof.Infrastructure.Auth;
 using PriceProof.Infrastructure.DependencyInjection;
 using Serilog;
 using Serilog.Formatting.Compact;
@@ -42,12 +46,32 @@ builder.Services
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCaseRequestValidator>();
+builder.Services
+    .AddAuthentication(SessionAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
+        SessionAuthenticationHandler.SchemeName,
+        _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .AddAuthenticationSchemes(SessionAuthenticationHandler.SchemeName)
+        .RequireAuthenticatedUser()
+        .Build();
+
+    options.AddPolicy("Admin", policy =>
+    {
+        policy.AddAuthenticationSchemes(SessionAuthenticationHandler.SchemeName);
+        policy.RequireAuthenticatedUser();
+        policy.RequireRole("Admin");
+    });
+});
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
         policy
             .WithOrigins(allowedOrigins)
+            .AllowCredentials()
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -145,10 +169,23 @@ var app = builder.Build();
 
 await app.Services.MigrateDatabaseAsync();
 
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseRateLimiter();
 app.UseCors("frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseSerilogRequestLogging(options =>
 {
     options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
@@ -158,7 +195,7 @@ app.UseSerilogRequestLogging(options =>
 });
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health").AllowAnonymous();
 
 app.Run();
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.PaymentRecords;
 using PriceProof.Application.PriceCaptures;
@@ -12,10 +13,11 @@ namespace PriceProof.IntegrationTests.Cases;
 public sealed class CaseAnalysisEndpointsTests : IClassFixture<PriceProofApiFactory>
 {
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public CaseAnalysisEndpointsTests(PriceProofApiFactory factory)
     {
-        _client = factory.CreateClient();
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -27,7 +29,7 @@ public sealed class CaseAnalysisEndpointsTests : IClassFixture<PriceProofApiFact
             "/price-captures",
             new CreatePriceCaptureRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 CaptureType.PriceTagPhoto,
                 EvidenceType.Image,
                 199.99m,
@@ -44,7 +46,7 @@ public sealed class CaseAnalysisEndpointsTests : IClassFixture<PriceProofApiFact
             "/payment-records",
             new CreatePaymentRecordRequest(
                 createdCase.Id,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.DebitCard,
                 209.99m,
                 "ZAR",
@@ -95,7 +97,7 @@ public sealed class CaseAnalysisEndpointsTests : IClassFixture<PriceProofApiFact
         var response = await _client.PostAsJsonAsync(
             "/cases",
             new CreateCaseRequest(
-                SeedData.DemoUserId,
+                _session.UserId,
                 SeedData.ShopriteMerchantId,
                 SeedData.ShopriteSandtonBranchId,
                 "Case for discrepancy analysis endpoint testing",

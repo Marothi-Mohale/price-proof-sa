@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PriceProof.Application.Auth;
 using PriceProof.Application.Cases;
 using PriceProof.Application.PaymentRecords;
 using PriceProof.Application.ReceiptRecords;
@@ -12,10 +13,11 @@ namespace PriceProof.IntegrationTests.ReceiptRecords;
 public sealed class ReceiptOcrEndpointsTests : IClassFixture<PriceProofApiFactory>
 {
     private readonly HttpClient _client;
+    private readonly AuthSessionDto _session;
 
     public ReceiptOcrEndpointsTests(PriceProofApiFactory factory)
     {
-        _client = factory.CreateClient();
+        (_client, _session) = factory.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -50,7 +52,7 @@ public sealed class ReceiptOcrEndpointsTests : IClassFixture<PriceProofApiFactor
         var response = await _client.PostAsJsonAsync(
             "/cases",
             new CreateCaseRequest(
-                SeedData.DemoUserId,
+                _session.UserId,
                 SeedData.ShopriteMerchantId,
                 SeedData.ShopriteSandtonBranchId,
                 "Receipt OCR integration test case",
@@ -70,7 +72,7 @@ public sealed class ReceiptOcrEndpointsTests : IClassFixture<PriceProofApiFactor
             "/payment-records",
             new CreatePaymentRecordRequest(
                 caseId,
-                SeedData.DemoUserId,
+                _session.UserId,
                 PaymentMethod.DebitCard,
                 49.98m,
                 "ZAR",
@@ -92,7 +94,7 @@ public sealed class ReceiptOcrEndpointsTests : IClassFixture<PriceProofApiFactor
             new CreateReceiptRecordRequest(
                 caseId,
                 paymentRecordId,
-                SeedData.DemoUserId,
+                _session.UserId,
                 EvidenceType.Image,
                 "receipt-ocr.txt",
                 "text/plain",
