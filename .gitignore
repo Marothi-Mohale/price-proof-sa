@@ -36,6 +36,8 @@ infra/secrets/
 storage/
 uploads/
 backups/
+!src/**/Uploads/
+!src/**/Uploads/**
 
 # Docker
 postgres-data/
